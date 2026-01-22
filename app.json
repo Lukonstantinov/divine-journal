@@ -1,0 +1,54 @@
+{
+  "expo": {
+    "name": "Дневник Христианина",
+    "slug": "christian-journal",
+    "version": "2.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#4A90D9"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.divinejournal.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#4A90D9"
+      },
+      "package": "com.divinejournal.app",
+      "permissions": [
+        "VIBRATE",
+        "RECEIVE_BOOT_COMPLETED",
+        "SCHEDULE_EXACT_ALARM"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "sounds": []
+        }
+      ],
+      "@react-native-community/datetimepicker",
+      "expo-asset",
+      "expo-sqlite"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "059a1631-a243-4ddf-bd07-9067c20de28d"
+      }
+    },
+    "owner": "lukkonas"
+  }
+}
