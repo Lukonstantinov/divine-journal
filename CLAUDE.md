@@ -64,9 +64,25 @@ assets/          - App icons and splash images
 
 ## Development Notes
 
-- The entire app logic lives in `App.tsx` - there are no separate component files
+- The entire app logic lives in `App.tsx` - there are no separate component files. Keep it this way unless explicitly told otherwise.
 - Bible data is statically imported from `BibleVerses.ts`
 - Cross-tab navigation: Calendar and Search can jump to specific Bible chapters
 - Entry blocks are stored as JSON arrays with type `'text' | 'verse'`
 - App version: v3.2
 - UI theme: warm earth tones (brown primary #8B4513, tan accent #D4A574, cream background #FDFBF7)
+- All user-facing strings must be in Russian
+
+## Enhancement Plan
+
+See `ENHANCEMENT_PLAN.md` for the full roadmap with code-level implementation details for each phase. The plan covers:
+
+- **Phase 1**: Critical UX fixes (toolbar above keyboard, scroll fixes)
+- **Phase 2**: Folder system for organizing entries
+- **Phase 3**: Statistics dashboard with charts
+- **Phase 4**: Daily Bible verse widget + reading reminders
+- **Phase 5**: Theme system (light/dark/sepia) + font scaling
+- **Phase 6**: Advanced editing (highlights, dividers, block reorder)
+- **Phase 7**: Graph view for entry connections
+- **Additional**: Export/import, voice input, password protection, cloud backup
+
+Priority order: Phase 1 → 2 → 4 → 3 → 5 → 6 → 7 → Additional
