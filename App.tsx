@@ -40,12 +40,20 @@ interface VerseHighlight { start: number; end: number; bold?: boolean; italic?: 
 interface VerseData { book: string; chapter: number; verse: number; verseEnd?: number; text: string; fontFamily?: string; highlights?: VerseHighlight[]; }
 interface TStyle { bold?: boolean; italic?: boolean; underline?: boolean; fontSize?: string; }
 interface Block { id: string; type: 'text' | 'verse'; content: string; boxColor?: string; textStyle?: TStyle; }
-interface Entry { id: number; title: string; content: string; category: Cat; created_at: string; linked_verses: string; }
+interface Entry { id: number; title: string; content: string; category: Cat; created_at: string; linked_verses: string; folder_id: number | null; }
 interface Reading { id: number; date: string; book: string; chapter: number; completed: boolean; }
 interface Fasting { id: number; start_date: string; end_date: string | null; notes: string; }
+interface Folder { id: number; name: string; color: string; icon: string; sort_order: number; }
 interface NavTarget { book: string; chapter: number; }
 
 let db: SQLite.SQLiteDatabase;
+
+const FOLDER_ICONS = ['folder', 'heart', 'star', 'flame', 'moon', 'sunny', 'book', 'bulb', 'leaf', 'diamond'] as const;
+const FOLDER_COLORS = [
+  { id: 'brown', color: '#8B4513' }, { id: 'blue', color: '#5B9BD5' }, { id: 'green', color: '#4A7C59' },
+  { id: 'purple', color: '#7B4B94' }, { id: 'red', color: '#8B3A3A' }, { id: 'teal', color: '#26A69A' },
+  { id: 'orange', color: '#B8860B' }, { id: 'pink', color: '#C2185B' },
+];
 
 const initDb = async () => {
   db = await SQLite.openDatabaseAsync('divine_journal.db');
@@ -55,7 +63,9 @@ const initDb = async () => {
     CREATE TABLE IF NOT EXISTS reading_plan (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, book TEXT NOT NULL, chapter INTEGER NOT NULL, completed BOOLEAN DEFAULT 0, UNIQUE(date, book, chapter));
     CREATE TABLE IF NOT EXISTS daily_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL UNIQUE, notes TEXT DEFAULT '');
     CREATE TABLE IF NOT EXISTS fasting (id INTEGER PRIMARY KEY AUTOINCREMENT, start_date TEXT NOT NULL, end_date TEXT, notes TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+    CREATE TABLE IF NOT EXISTS folders (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, color TEXT DEFAULT '#8B4513', icon TEXT DEFAULT 'folder', sort_order INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
   `);
+  try { await db.execAsync('ALTER TABLE entries ADD COLUMN folder_id INTEGER DEFAULT NULL'); } catch (e) {}
 };
 
 const genId = () => Math.random().toString(36).substr(2, 9);
@@ -305,6 +315,15 @@ const JournalScreen = () => {
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const blockPositions = useRef<Record<string, number>>({});
+  // Folder state
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [activeFolder, setActiveFolder] = useState<number | null>(null);
+  const [entryFolder, setEntryFolder] = useState<number | null>(null);
+  const [showFolderMgmt, setShowFolderMgmt] = useState(false);
+  const [folderName, setFolderName] = useState('');
+  const [folderColor, setFolderColor] = useState(FOLDER_COLORS[0].color);
+  const [folderIcon, setFolderIcon] = useState<string>('folder');
+  const [editingFolder, setEditingFolder] = useState<Folder | null>(null);
 
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
@@ -313,9 +332,36 @@ const JournalScreen = () => {
   }, []);
 
   const load = useCallback(async () => {
-    setEntries(await db.getAllAsync<Entry>('SELECT * FROM entries ORDER BY created_at DESC')); 
+    setEntries(await db.getAllAsync<Entry>('SELECT * FROM entries ORDER BY created_at DESC'));
     setFasts(await db.getAllAsync<Fasting>('SELECT * FROM fasting'));
+    setFolders(await db.getAllAsync<Folder>('SELECT * FROM folders ORDER BY sort_order ASC'));
   }, []);
+
+  const folderEntryCount = useCallback((folderId: number) => entries.filter(e => e.folder_id === folderId).length, [entries]);
+
+  const saveFolder = async () => {
+    if (!folderName.trim()) return Alert.alert('Ошибка', 'Введите название папки');
+    if (editingFolder) {
+      await db.runAsync('UPDATE folders SET name=?, color=?, icon=? WHERE id=?', [folderName.trim(), folderColor, folderIcon, editingFolder.id]);
+    } else {
+      const maxOrder = folders.length > 0 ? Math.max(...folders.map(f => f.sort_order)) + 1 : 0;
+      await db.runAsync('INSERT INTO folders (name, color, icon, sort_order) VALUES (?,?,?,?)', [folderName.trim(), folderColor, folderIcon, maxOrder]);
+    }
+    setFolderName(''); setFolderColor(FOLDER_COLORS[0].color); setFolderIcon('folder'); setEditingFolder(null);
+    load();
+  };
+
+  const delFolder = (f: Folder) => Alert.alert(`Удалить «${f.name}»?`, 'Записи не будут удалены', [
+    { text: 'Отмена', style: 'cancel' },
+    { text: 'Удалить', style: 'destructive', onPress: async () => {
+      await db.runAsync('UPDATE entries SET folder_id=NULL WHERE folder_id=?', [f.id]);
+      await db.runAsync('DELETE FROM folders WHERE id=?', [f.id]);
+      if (activeFolder === f.id) setActiveFolder(null);
+      load();
+    }},
+  ]);
+
+  const startEditFolder = (f: Folder) => { setEditingFolder(f); setFolderName(f.name); setFolderColor(f.color); setFolderIcon(f.icon); };
   useEffect(() => { load(); }, [load]);
 
   const isFastingEntry = (e: Entry) => {
@@ -331,20 +377,20 @@ const JournalScreen = () => {
     if (!title.trim()) return Alert.alert('Ошибка', 'Введите заголовок');
     const cJson = JSON.stringify(blocks);
     const linked = blocks.filter(b => b.type === 'verse').map(b => { try { const d = JSON.parse(b.content); return { book: d.book, chapter: d.chapter, verse: d.verse }; } catch { return null; } }).filter(Boolean);
-    if (editing) await db.runAsync('UPDATE entries SET title=?, content=?, category=?, linked_verses=? WHERE id=?', [title, cJson, cat, JSON.stringify(linked), editing.id]);
-    else await db.runAsync('INSERT INTO entries (title, content, category, linked_verses) VALUES (?,?,?,?)', [title, cJson, cat, JSON.stringify(linked)]);
+    if (editing) await db.runAsync('UPDATE entries SET title=?, content=?, category=?, linked_verses=?, folder_id=? WHERE id=?', [title, cJson, cat, JSON.stringify(linked), entryFolder, editing.id]);
+    else await db.runAsync('INSERT INTO entries (title, content, category, linked_verses, folder_id) VALUES (?,?,?,?,?)', [title, cJson, cat, JSON.stringify(linked), entryFolder]);
     reset(); load();
   };
 
   const del = (id: number) => Alert.alert('Удалить?', '', [{ text: 'Отмена', style: 'cancel' }, { text: 'Удалить', style: 'destructive', onPress: async () => { await db.runAsync('DELETE FROM entries WHERE id=?', [id]); load(); setViewing(null); }}]);
 
   const openEdit = (e?: Entry) => {
-    if (e) { setEditing(e); setTitle(e.title); setBlocks(parseBlocks(e.content)); setCat(e.category); }
-    else { reset(); setBlocks([{ id: genId(), type: 'text', content: '' }]); }
+    if (e) { setEditing(e); setTitle(e.title); setBlocks(parseBlocks(e.content)); setCat(e.category); setEntryFolder(e.folder_id); }
+    else { reset(); setBlocks([{ id: genId(), type: 'text', content: '' }]); setEntryFolder(activeFolder); }
     setViewing(null); setModal(true);
   };
 
-  const reset = () => { setEditing(null); setTitle(''); setBlocks([{ id: genId(), type: 'text', content: '' }]); setCat('мысль'); setModal(false); setActiveId(null); setTStyle({}); };
+  const reset = () => { setEditing(null); setTitle(''); setBlocks([{ id: genId(), type: 'text', content: '' }]); setCat('мысль'); setModal(false); setActiveId(null); setTStyle({}); setEntryFolder(null); };
 
   const updateBlock = (id: string, txt: string) => setBlocks(bs => bs.map(b => b.id === id ? { ...b, content: txt, textStyle: tStyle } : b));
   const toggleStyle = (k: keyof TStyle) => { const nv = !tStyle[k]; setTStyle(p => ({ ...p, [k]: nv })); if (activeId) setBlocks(bs => bs.map(b => b.id === activeId ? { ...b, textStyle: { ...b.textStyle, [k]: nv } } : b)); };
@@ -386,10 +432,29 @@ const JournalScreen = () => {
 
   const renderText = (b: Block) => { if (!b.content) return null; const st: any = { ...s.viewTxt }; if (b.textStyle?.bold) st.fontWeight = 'bold'; if (b.textStyle?.italic) st.fontStyle = 'italic'; if (b.textStyle?.underline) st.textDecorationLine = 'underline'; if (b.textStyle?.fontSize) st.fontSize = getFSize(b.textStyle.fontSize); return <Text style={st}>{b.content}</Text>; };
 
+  const filteredEntries = activeFolder ? entries.filter(e => e.folder_id === activeFolder) : entries;
+  const getFolderName = (id: number | null) => { if (!id) return null; const f = folders.find(x => x.id === id); return f || null; };
+
   return (
     <View style={[s.screen, { paddingBottom: 80 }]}>
       <View style={s.header}><Text style={s.headerTxt}>📖 Духовный дневник</Text><TouchableOpacity style={s.addBtn} onPress={() => openEdit()}><Ionicons name="add" size={28} color={C.textOn} /></TouchableOpacity></View>
-      <FlatList data={entries} keyExtractor={i => i.id.toString()} renderItem={({ item }) => {
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.folderBar} contentContainerStyle={{ paddingHorizontal: 12, gap: 8 }}>
+        <TouchableOpacity style={[s.folderChip, !activeFolder && s.folderChipAct]} onPress={() => setActiveFolder(null)}>
+          <Ionicons name="albums" size={14} color={!activeFolder ? C.textOn : C.textSec} />
+          <Text style={[s.folderChipTxt, !activeFolder && s.folderChipTxtAct]}>Все ({entries.length})</Text>
+        </TouchableOpacity>
+        {folders.map(f => (
+          <TouchableOpacity key={f.id} style={[s.folderChip, activeFolder === f.id && { backgroundColor: f.color, borderColor: f.color }]} onPress={() => setActiveFolder(activeFolder === f.id ? null : f.id)}>
+            <Ionicons name={f.icon as any} size={14} color={activeFolder === f.id ? C.textOn : f.color} />
+            <Text style={[s.folderChipTxt, activeFolder === f.id && s.folderChipTxtAct]}>{f.name} ({folderEntryCount(f.id)})</Text>
+          </TouchableOpacity>
+        ))}
+        <TouchableOpacity style={[s.folderChip, { borderStyle: 'dashed' }]} onPress={() => { setEditingFolder(null); setFolderName(''); setFolderColor(FOLDER_COLORS[0].color); setFolderIcon('folder'); setShowFolderMgmt(true); }}>
+          <Ionicons name="add" size={14} color={C.primary} />
+          <Text style={[s.folderChipTxt, { color: C.primary }]}>Папка</Text>
+        </TouchableOpacity>
+      </ScrollView>
+      <FlatList data={filteredEntries} keyExtractor={i => i.id.toString()} renderItem={({ item }) => {
         const cs = catStyle(item.category), vc = vCount(item.content), pv = preview(item.content);
         const isFasting = isFastingEntry(item);
         return (
@@ -403,7 +468,7 @@ const JournalScreen = () => {
             </View>
             <Text style={s.cardTitle}>{item.title}</Text>
             {pv ? <Text style={s.cardPrev} numberOfLines={2}>{pv}</Text> : null}
-            {vc > 0 && <View style={s.tags}><View style={s.tag}><Ionicons name="book" size={10} color={C.primary} /><Text style={s.tagTxt}>{vc} стих{vc > 1 ? (vc < 5 ? 'а' : 'ов') : ''}</Text></View></View>}
+            {(vc > 0 || item.folder_id) && <View style={s.tags}>{item.folder_id && (() => { const fl = getFolderName(item.folder_id); return fl ? <View style={[s.tag, { backgroundColor: fl.color + '20' }]}><Ionicons name={fl.icon as any} size={10} color={fl.color} /><Text style={[s.tagTxt, { color: fl.color }]}>{fl.name}</Text></View> : null; })()}{vc > 0 && <View style={s.tag}><Ionicons name="book" size={10} color={C.primary} /><Text style={s.tagTxt}>{vc} стих{vc > 1 ? (vc < 5 ? 'а' : 'ов') : ''}</Text></View>}</View>}
           </TouchableOpacity>
         );
       }} contentContainerStyle={s.list} ListEmptyComponent={<View style={s.empty}><Ionicons name="journal-outline" size={64} color={C.border} /><Text style={s.emptyTxt}>Записей пока нет</Text></View>} />
@@ -422,6 +487,18 @@ const JournalScreen = () => {
           <ScrollView ref={scrollRef} style={s.modalBody} keyboardShouldPersistTaps="handled" scrollEventThrottle={16}>
             <Text style={s.label}>Категория</Text>
             <View style={s.catPicker}>{(['сон','откровение','мысль','молитва'] as Cat[]).map(c => { const cs = catStyle(c); return <TouchableOpacity key={c} style={[s.catOpt, { backgroundColor: cs.bg }, cat === c && { borderColor: cs.color }]} onPress={() => setCat(c)}><Ionicons name={catIcon(c)} size={16} color={cs.color} /><Text style={[s.catOptTxt, { color: cs.color }]}>{c}</Text></TouchableOpacity>; })}</View>
+            {folders.length > 0 && <><Text style={s.label}>Папка</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+              <TouchableOpacity style={[s.folderChip, !entryFolder && s.folderChipAct]} onPress={() => setEntryFolder(null)}>
+                <Text style={[s.folderChipTxt, !entryFolder && s.folderChipTxtAct]}>Без папки</Text>
+              </TouchableOpacity>
+              {folders.map(f => (
+                <TouchableOpacity key={f.id} style={[s.folderChip, entryFolder === f.id && { backgroundColor: f.color, borderColor: f.color }]} onPress={() => setEntryFolder(f.id)}>
+                  <Ionicons name={f.icon as any} size={14} color={entryFolder === f.id ? C.textOn : f.color} />
+                  <Text style={[s.folderChipTxt, entryFolder === f.id && s.folderChipTxtAct]}>{f.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView></>}
             <Text style={s.label}>Заголовок</Text>
             <TextInput style={s.input} value={title} onChangeText={setTitle} placeholder="Название..." placeholderTextColor={C.textMuted} />
             <Text style={s.label}>Содержание</Text>
@@ -440,6 +517,61 @@ const JournalScreen = () => {
 
       <VerseFormatModal visible={formatVerse !== null} onClose={() => setFormatVerse(null)} verseData={formatVerse?.data || null} onSave={saveVerseFormat} />
       <VersePickerModal visible={vpick} onClose={() => { setVpick(false); setInsertId(null); }} onSelect={addVerses} />
+
+      <Modal visible={showFolderMgmt} animationType="slide" transparent>
+        <View style={s.sheetOverlay}>
+          <View style={[s.sheet, { maxHeight: '85%' }]}>
+            <View style={s.sheetHdr}>
+              <Text style={s.sheetTitle}>{editingFolder ? 'Редактировать папку' : 'Управление папками'}</Text>
+              <TouchableOpacity onPress={() => { setShowFolderMgmt(false); setEditingFolder(null); setFolderName(''); }}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity>
+            </View>
+            <ScrollView style={{ padding: 16 }}>
+              <Text style={[s.label, { marginTop: 0 }]}>{editingFolder ? 'Название' : 'Новая папка'}</Text>
+              <TextInput style={s.input} value={folderName} onChangeText={setFolderName} placeholder="Название папки..." placeholderTextColor={C.textMuted} />
+              <Text style={s.label}>Цвет</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 8 }}>
+                {FOLDER_COLORS.map(c => (
+                  <TouchableOpacity key={c.id} style={[s.fmtColorItem, { backgroundColor: c.color }, folderColor === c.color && s.fmtColorItemAct]} onPress={() => setFolderColor(c.color)} />
+                ))}
+              </View>
+              <Text style={s.label}>Иконка</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
+                {FOLDER_ICONS.map(ic => (
+                  <TouchableOpacity key={ic} style={[{ width: 44, height: 44, borderRadius: 10, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: folderIcon === ic ? folderColor : C.border, backgroundColor: folderIcon === ic ? folderColor + '20' : C.surface }]} onPress={() => setFolderIcon(ic)}>
+                    <Ionicons name={ic as any} size={20} color={folderIcon === ic ? folderColor : C.textMuted} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TouchableOpacity style={[s.saveBtn, { margin: 0, backgroundColor: folderColor }]} onPress={saveFolder}>
+                <Text style={s.saveBtnTxt}>{editingFolder ? 'Сохранить' : 'Создать папку'}</Text>
+              </TouchableOpacity>
+              {editingFolder && <TouchableOpacity style={{ alignItems: 'center', padding: 12, marginTop: 8 }} onPress={() => { setEditingFolder(null); setFolderName(''); setFolderColor(FOLDER_COLORS[0].color); setFolderIcon('folder'); }}>
+                <Text style={{ color: C.textMuted }}>Отмена редактирования</Text>
+              </TouchableOpacity>}
+              {folders.length > 0 && <>
+                <Text style={s.label}>Существующие папки</Text>
+                {folders.map(f => (
+                  <View key={f.id} style={[s.sheetItem, { borderRadius: 10, marginBottom: 6 }]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 10 }}>
+                      <View style={{ width: 36, height: 36, borderRadius: 8, backgroundColor: f.color + '20', justifyContent: 'center', alignItems: 'center' }}>
+                        <Ionicons name={f.icon as any} size={18} color={f.color} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.sheetItemTxt}>{f.name}</Text>
+                        <Text style={s.sheetItemSub}>{folderEntryCount(f.id)} записей</Text>
+                      </View>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 12 }}>
+                      <TouchableOpacity onPress={() => startEditFolder(f)}><Ionicons name="pencil" size={20} color={C.textMuted} /></TouchableOpacity>
+                      <TouchableOpacity onPress={() => delFolder(f)}><Ionicons name="trash-outline" size={20} color={C.error} /></TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+              </>}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -1126,4 +1258,10 @@ const s = StyleSheet.create({
   fmtAddBtn: { flexDirection: 'row', backgroundColor: C.primary, padding: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 16 }, fmtAddTxt: { color: C.textOn, fontSize: 16, fontWeight: '600' },
   fmtHlItem: { flexDirection: 'row', backgroundColor: C.surface, padding: 12, borderRadius: 10, marginBottom: 8, alignItems: 'center' }, fmtHlRange: { fontSize: 13, fontWeight: '600', color: C.primary }, fmtHlPreview: { fontSize: 13, color: C.textSec, fontStyle: 'italic' },
   fmtHlStyles: { flexDirection: 'row', gap: 6, marginTop: 4 }, fmtHlTag: { fontSize: 11, color: C.textMuted, backgroundColor: C.surfaceAlt, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }, fmtHlColorDot: { width: 16, height: 16, borderRadius: 8 },
+  // Folder styles
+  folderBar: { maxHeight: 44, marginBottom: 4 },
+  folderChip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, gap: 6 },
+  folderChipAct: { backgroundColor: C.primary, borderColor: C.primary },
+  folderChipTxt: { fontSize: 13, fontWeight: '500', color: C.textSec },
+  folderChipTxtAct: { color: C.textOn },
 });
