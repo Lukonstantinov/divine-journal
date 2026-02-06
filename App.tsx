@@ -7,12 +7,42 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 
 const { width: SW } = Dimensions.get('window');
 
-const C = {
-  primary: '#8B4513', primaryLight: '#A0522D', bg: '#FDFBF7', surface: '#FFFFFF', surfaceAlt: '#F5F2ED',
-  text: '#2C1810', textSec: '#5D4037', textMuted: '#8D7B6C', textOn: '#FFFFFF',
-  accent: '#D4A574', accentLight: '#E8D5B7', success: '#4A7C59', error: '#8B3A3A', warning: '#B8860B',
-  border: '#DED5C8', borderLight: '#EDE8E0', dreamBg: '#E8F4EA', revBg: '#FFF8E7', thoughtBg: '#F0F4F8', prayerBg: '#F5E6F0',
+const THEMES = {
+  light: {
+    primary: '#8B4513', primaryLight: '#A0522D', bg: '#FDFBF7', surface: '#FFFFFF', surfaceAlt: '#F5F2ED',
+    text: '#2C1810', textSec: '#5D4037', textMuted: '#8D7B6C', textOn: '#FFFFFF',
+    accent: '#D4A574', accentLight: '#E8D5B7', success: '#4A7C59', error: '#8B3A3A', warning: '#B8860B',
+    border: '#DED5C8', borderLight: '#EDE8E0', dreamBg: '#E8F4EA', revBg: '#FFF8E7', thoughtBg: '#F0F4F8', prayerBg: '#F5E6F0',
+    statusBar: 'dark-content' as const,
+  },
+  dark: {
+    primary: '#D4A574', primaryLight: '#E8D5B7', bg: '#1A1410', surface: '#2C241E', surfaceAlt: '#3A302A',
+    text: '#FDFBF7', textSec: '#C4B5A5', textMuted: '#8D7B6C', textOn: '#1A1410',
+    accent: '#8B4513', accentLight: '#3A302A', success: '#66BB6A', error: '#EF5350', warning: '#FFB74D',
+    border: '#4A3F35', borderLight: '#3A302A', dreamBg: '#1E2E1E', revBg: '#2E2A1A', thoughtBg: '#1E2228', prayerBg: '#2A1E2E',
+    statusBar: 'light-content' as const,
+  },
+  sepia: {
+    primary: '#6B4226', primaryLight: '#8B5E3C', bg: '#F4ECD8', surface: '#FAF5E8', surfaceAlt: '#EDE4D0',
+    text: '#3E2723', textSec: '#5D4037', textMuted: '#8D6E63', textOn: '#FAF5E8',
+    accent: '#A67B5B', accentLight: '#D7C4A5', success: '#558B2F', error: '#C62828', warning: '#F57F17',
+    border: '#C8B99A', borderLight: '#DDD2BC', dreamBg: '#E4ECD0', revBg: '#F5EDD0', thoughtBg: '#E4E8D8', prayerBg: '#EDE0E8',
+    statusBar: 'dark-content' as const,
+  },
 };
+
+type ThemeId = keyof typeof THEMES;
+type ThemeColors = Omit<typeof THEMES.light, 'statusBar'> & { statusBar: 'dark-content' | 'light-content' };
+
+const ThemeContext = React.createContext<{ theme: ThemeColors; themeId: ThemeId; setThemeId: (id: ThemeId) => void; fontScale: number; setFontScale: (s: number) => void }>({
+  theme: THEMES.light, themeId: 'light', setThemeId: () => {}, fontScale: 1, setFontScale: () => {},
+});
+const useTheme = () => React.useContext(ThemeContext);
+
+type StatusBarStyle = 'dark-content' | 'light-content';
+
+// Default colors for StyleSheet (static — overridden inline with theme)
+const C = THEMES.light;
 
 const VERSE_COLORS = [
   { id: 'gold', bg: '#FEF9F3', border: '#D4A574' }, { id: 'blue', bg: '#EBF5FF', border: '#5B9BD5' },
@@ -65,6 +95,7 @@ const initDb = async () => {
     CREATE TABLE IF NOT EXISTS fasting (id INTEGER PRIMARY KEY AUTOINCREMENT, start_date TEXT NOT NULL, end_date TEXT, notes TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
     CREATE TABLE IF NOT EXISTS folders (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, color TEXT DEFAULT '#8B4513', icon TEXT DEFAULT 'folder', sort_order INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
     CREATE TABLE IF NOT EXISTS daily_verse_history (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL UNIQUE, verse_id TEXT NOT NULL, seen BOOLEAN DEFAULT 0);
+    CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT);
   `);
   try { await db.execAsync('ALTER TABLE entries ADD COLUMN folder_id INTEGER DEFAULT NULL'); } catch (e) {}
 };
@@ -118,6 +149,7 @@ const SafeAreaWrapper = ({ children }: { children: React.ReactNode }) => {
 };
 
 const AppContent = () => {
+  const { theme } = useTheme();
   const [tab, setTab] = useState<Tab>('journal');
   const [ready, setReady] = useState(false);
   const [navTarget, setNavTarget] = useState<NavTarget | null>(null);
@@ -132,30 +164,68 @@ const AppContent = () => {
   const clearNavTarget = () => setNavTarget(null);
 
   if (!ready) return (
-    <View style={s.loading}>
-      <StatusBar barStyle="dark-content" />
-      <Ionicons name="book" size={48} color={C.primary} />
-      <Text style={s.loadingTxt}>Загрузка...</Text>
+    <View style={[s.loading, { backgroundColor: theme.bg }]}>
+      <StatusBar barStyle={theme.statusBar} />
+      <Ionicons name="book" size={48} color={theme.primary} />
+      <Text style={[s.loadingTxt, { color: theme.textSec }]}>Загрузка...</Text>
     </View>
   );
 
   return (
     <>
-      <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
+      <StatusBar barStyle={theme.statusBar} backgroundColor={theme.bg} />
       {tab === 'journal' && <JournalScreen onNavigate={navigateToBible} />}
       {tab === 'bible' && <BibleScreen navTarget={navTarget} clearNavTarget={clearNavTarget} />}
       {tab === 'calendar' && <CalendarScreen onNavigate={navigateToBible} />}
       {tab === 'search' && <SearchScreen onNavigate={navigateToBible} />}
       {tab === 'settings' && <SettingsScreen />}
-      <View style={s.tabBar}>
+      <View style={[s.tabBar, { backgroundColor: theme.surface, borderTopColor: theme.border }]}>
         {[['journal','book','Дневник'],['bible','library','Библия'],['calendar','calendar','Календарь'],['search','search','Поиск'],['settings','settings','Ещё']].map(([t,i,l]) => (
           <TouchableOpacity key={t} style={s.tabBtn} onPress={() => setTab(t as Tab)}>
-            <Ionicons name={tab === t ? i : `${i}-outline`} size={22} color={tab === t ? C.primary : C.textMuted} />
-            <Text style={[s.tabLbl, tab === t && s.tabLblAct]}>{l}</Text>
+            <Ionicons name={tab === t ? i : `${i}-outline`} size={22} color={tab === t ? theme.primary : theme.textMuted} />
+            <Text style={[s.tabLbl, { color: theme.textMuted }, tab === t && { color: theme.primary, fontWeight: '600' }]}>{l}</Text>
           </TouchableOpacity>
         ))}
       </View>
     </>
+  );
+};
+
+const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
+  const [themeId, setThemeId] = useState<ThemeId>('light');
+  const [fontScale, setFontScale] = useState(1);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    const loadPrefs = async () => {
+      try {
+        await initDb();
+        const t = await db.getFirstAsync<{ value: string }>("SELECT value FROM app_settings WHERE key='theme'");
+        if (t && t.value in THEMES) setThemeId(t.value as ThemeId);
+        const fs = await db.getFirstAsync<{ value: string }>("SELECT value FROM app_settings WHERE key='fontScale'");
+        if (fs) setFontScale(parseFloat(fs.value));
+      } catch (e) {}
+      setLoaded(true);
+    };
+    loadPrefs();
+  }, []);
+
+  const handleSetTheme = (id: ThemeId) => {
+    setThemeId(id);
+    db.runAsync("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('theme', ?)", [id]);
+  };
+
+  const handleSetFontScale = (s: number) => {
+    setFontScale(s);
+    db.runAsync("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('fontScale', ?)", [String(s)]);
+  };
+
+  if (!loaded) return null;
+
+  return (
+    <ThemeContext.Provider value={{ theme: THEMES[themeId], themeId, setThemeId: handleSetTheme, fontScale, setFontScale: handleSetFontScale }}>
+      {children}
+    </ThemeContext.Provider>
   );
 };
 
@@ -174,9 +244,11 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <SafeAreaWrapper>
-        <AppContent />
-      </SafeAreaWrapper>
+      <ThemeProvider>
+        <SafeAreaWrapper>
+          <AppContent />
+        </SafeAreaWrapper>
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }
@@ -1229,6 +1301,7 @@ const SearchScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: numb
 
 // Settings Screen
 const SettingsScreen = () => {
+  const { theme, themeId, setThemeId, fontScale, setFontScale } = useTheme();
   const [stats, setStats] = useState({ e: 0, b: 0, r: 0, totalR: 0, streak: 0, fastDays: 0 });
   const [byCat, setByCat] = useState<Record<Cat, number>>({ сон: 0, откровение: 0, мысль: 0, молитва: 0 });
   const [byMonth, setByMonth] = useState<{ month: string; label: string; count: number }[]>([]);
@@ -1333,6 +1406,27 @@ const SettingsScreen = () => {
             <View style={s.achieveRow}><Ionicons name="heart" size={20} color="#9C27B0" /><Text style={{ fontSize: 14, color: C.text }}>Дней поста</Text><Text style={{ marginLeft: 'auto', fontSize: 16, fontWeight: '700', color: '#9C27B0' }}>{stats.fastDays}</Text></View>
             <View style={s.achieveRow}><Ionicons name="book" size={20} color={C.success} /><Text style={{ fontSize: 14, color: C.text }}>Глав прочитано</Text><Text style={{ marginLeft: 'auto', fontSize: 16, fontWeight: '700', color: C.success }}>{stats.r}</Text></View>
           </View>
+        </View>
+
+        <View style={s.section}><Text style={s.secTitle}>ОФОРМЛЕНИЕ</Text>
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+            {([['light', 'Светлая', 'sunny'], ['dark', 'Тёмная', 'moon'], ['sepia', 'Сепия', 'document-text']] as const).map(([id, label, icon]) => (
+              <TouchableOpacity key={id} style={[s.statCard, { borderWidth: 2, borderColor: themeId === id ? theme.primary : 'transparent' }]} onPress={() => setThemeId(id)}>
+                <Ionicons name={icon} size={24} color={themeId === id ? theme.primary : C.textMuted} />
+                <Text style={[s.statLbl, { marginTop: 6, color: themeId === id ? theme.primary : C.textMuted }]}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Text style={{ fontSize: 14, color: C.textSec, marginBottom: 8 }}>Размер текста</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <TouchableOpacity onPress={() => setFontScale(Math.max(0.8, fontScale - 0.1))}><Text style={{ fontSize: 20, fontWeight: '700', color: C.primary }}>A-</Text></TouchableOpacity>
+            <View style={{ flex: 1, height: 4, backgroundColor: C.borderLight, borderRadius: 2 }}>
+              <View style={{ width: `${((fontScale - 0.8) / 0.6) * 100}%`, height: 4, backgroundColor: C.primary, borderRadius: 2 }} />
+            </View>
+            <TouchableOpacity onPress={() => setFontScale(Math.min(1.4, fontScale + 0.1))}><Text style={{ fontSize: 20, fontWeight: '700', color: C.primary }}>A+</Text></TouchableOpacity>
+            <Text style={{ fontSize: 12, color: C.textMuted, width: 40, textAlign: 'right' }}>{Math.round(fontScale * 100)}%</Text>
+          </View>
+          <Text style={{ fontSize: Math.round(14 * fontScale), color: C.textSec, marginTop: 10, fontStyle: 'italic' }}>Образец текста</Text>
         </View>
 
         <View style={s.section}><Text style={s.secTitle}>О ПРИЛОЖЕНИИ</Text><View style={s.aboutCard}><Ionicons name="book" size={40} color={C.primary} /><Text style={s.appName}>Divine Journal</Text><Text style={s.appVer}>Версия 3.2</Text><Text style={s.appDesc}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
