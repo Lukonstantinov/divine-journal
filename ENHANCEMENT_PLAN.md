@@ -1258,8 +1258,8 @@ Use this to track progress across sessions:
 - [x] **Phase 4**: Daily verse widget
 - [ ] **Phase 4**: Reading reminders (notifications)
 - [x] **Phase 3**: Statistics dashboard
-- [ ] **Phase 5**: Theme system (light/dark/sepia)
-- [ ] **Phase 5**: Font scaling
+- [x] **Phase 5**: Theme system (light/dark/sepia)
+- [x] **Phase 5**: Font scaling
 - [ ] **Phase 6A**: Rich text in daily notes
 - [ ] **Phase 6B**: Text highlighting in text blocks
 - [ ] **Phase 6C**: Toolbar enhancements (highlight, divider)
