@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Modal, ScrollView, Alert, StatusBar, SafeAreaView, KeyboardAvoidingView, Platform, Dimensions, AppState } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Modal, ScrollView, Alert, StatusBar, SafeAreaView, KeyboardAvoidingView, Platform, Dimensions, AppState, Keyboard } from 'react-native';
 import * as SQLite from 'expo-sqlite';
 import { Ionicons } from '@expo/vector-icons';
 import { BIBLE_VERSES, BIBLE_BOOKS, BibleVerse, BibleBook } from './BibleVerses';
@@ -302,8 +302,17 @@ const JournalScreen = () => {
   const [tStyle, setTStyle] = useState<TStyle>({});
   const [fasts, setFasts] = useState<Fasting[]>([]);
   const [formatVerse, setFormatVerse] = useState<{ blockId: string; data: VerseData } | null>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+  const blockPositions = useRef<Record<string, number>>({});
 
-  const load = useCallback(async () => { 
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
+
+  const load = useCallback(async () => {
     setEntries(await db.getAllAsync<Entry>('SELECT * FROM entries ORDER BY created_at DESC')); 
     setFasts(await db.getAllAsync<Fasting>('SELECT * FROM fasting'));
   }, []);
@@ -410,15 +419,16 @@ const JournalScreen = () => {
       <Modal visible={modal} animationType="slide">
         <SafeAreaView style={s.modal}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
           <View style={s.modalHdr}><TouchableOpacity onPress={reset}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity><Text style={s.modalTitle}>{editing ? 'Редактировать' : 'Новая запись'}</Text><TouchableOpacity onPress={save}><Text style={s.saveTxt}>Сохранить</Text></TouchableOpacity></View>
-          {activeId && <RTToolbar style={tStyle} onToggle={toggleStyle} onSize={setFontSize} />}
-          <ScrollView style={s.modalBody}>
+          <ScrollView ref={scrollRef} style={s.modalBody} keyboardShouldPersistTaps="handled" scrollEventThrottle={16}>
             <Text style={s.label}>Категория</Text>
             <View style={s.catPicker}>{(['сон','откровение','мысль','молитва'] as Cat[]).map(c => { const cs = catStyle(c); return <TouchableOpacity key={c} style={[s.catOpt, { backgroundColor: cs.bg }, cat === c && { borderColor: cs.color }]} onPress={() => setCat(c)}><Ionicons name={catIcon(c)} size={16} color={cs.color} /><Text style={[s.catOptTxt, { color: cs.color }]}>{c}</Text></TouchableOpacity>; })}</View>
             <Text style={s.label}>Заголовок</Text>
             <TextInput style={s.input} value={title} onChangeText={setTitle} placeholder="Название..." placeholderTextColor={C.textMuted} />
             <Text style={s.label}>Содержание</Text>
-            {blocks.map((b, i) => <View key={b.id}>{b.type === 'text' ? <View><TextInput style={[s.input, s.textArea, activeId === b.id && s.inputAct, b.textStyle?.fontSize && { fontSize: getFSize(b.textStyle.fontSize) }, b.textStyle?.bold && { fontWeight: 'bold' }, b.textStyle?.italic && { fontStyle: 'italic' }]} value={b.content} onChangeText={t => updateBlock(b.id, t)} onFocus={() => { setActiveId(b.id); setTStyle(b.textStyle || {}); }} placeholder={i === 0 ? "Начните писать..." : "Продолжайте..."} placeholderTextColor={C.textMuted} multiline textAlignVertical="top" /><TouchableOpacity style={s.insertBtn} onPress={() => { setInsertId(b.id); setVpick(true); }}><Ionicons name="add-circle" size={18} color={C.primary} /><Text style={s.insertTxt}>Вставить стихи</Text></TouchableOpacity></View> : <View style={[s.verseEdit, { backgroundColor: getVColor(b.boxColor).bg, borderLeftColor: getVColor(b.boxColor).border }]}>{(() => { try { const d = JSON.parse(b.content) as VerseData; const font = getVFont(d.fontFamily); const ref = d.verseEnd ? `${d.book} ${d.chapter}:${d.verse}-${d.verseEnd}` : `${d.book} ${d.chapter}:${d.verse}`; return <><View style={s.verseEditHdr}><View style={s.verseEditLeft}><Ionicons name="book" size={16} color={getVColor(b.boxColor).border} /><Text style={[s.verseRef, { color: getVColor(b.boxColor).border }]}>{ref}</Text>{d.fontFamily && <Text style={s.verseFontLabel}>{font.name}</Text>}</View><View style={s.verseEditActs}><TouchableOpacity onPress={() => openVerseFormat(b.id)}><Ionicons name="text" size={20} color={getVColor(b.boxColor).border} /></TouchableOpacity><TouchableOpacity onPress={() => setColorPick(b.id)}><Ionicons name="color-palette" size={20} color={getVColor(b.boxColor).border} /></TouchableOpacity><TouchableOpacity onPress={() => removeBlock(b.id)}><Ionicons name="close-circle" size={22} color={C.error} /></TouchableOpacity></View></View><HighlightedVerseText text={d.text} highlights={d.highlights} fontFamily={font.family} baseStyle={s.verseEditTxt} /></>; } catch { return null; } })()}</View>}</View>)}
+            {blocks.map((b, i) => <View key={b.id} onLayout={(e) => { blockPositions.current[b.id] = e.nativeEvent.layout.y; }}>{b.type === 'text' ? <View><TextInput style={[s.input, s.textArea, activeId === b.id && s.inputAct, b.textStyle?.fontSize && { fontSize: getFSize(b.textStyle.fontSize) }, b.textStyle?.bold && { fontWeight: 'bold' }, b.textStyle?.italic && { fontStyle: 'italic' }]} value={b.content} onChangeText={t => updateBlock(b.id, t)} onFocus={() => { setActiveId(b.id); setTStyle(b.textStyle || {}); setTimeout(() => { const y = blockPositions.current[b.id]; if (y !== undefined && scrollRef.current) { scrollRef.current.scrollTo({ y: Math.max(0, y - 100), animated: true }); } }, 150); }} placeholder={i === 0 ? "Начните писать..." : "Продолжайте..."} placeholderTextColor={C.textMuted} multiline textAlignVertical="top" /><TouchableOpacity style={s.insertBtn} onPress={() => { setInsertId(b.id); setVpick(true); }}><Ionicons name="add-circle" size={18} color={C.primary} /><Text style={s.insertTxt}>Вставить стихи</Text></TouchableOpacity></View> : <View style={[s.verseEdit, { backgroundColor: getVColor(b.boxColor).bg, borderLeftColor: getVColor(b.boxColor).border }]}>{(() => { try { const d = JSON.parse(b.content) as VerseData; const font = getVFont(d.fontFamily); const ref = d.verseEnd ? `${d.book} ${d.chapter}:${d.verse}-${d.verseEnd}` : `${d.book} ${d.chapter}:${d.verse}`; return <><View style={s.verseEditHdr}><View style={s.verseEditLeft}><Ionicons name="book" size={16} color={getVColor(b.boxColor).border} /><Text style={[s.verseRef, { color: getVColor(b.boxColor).border }]}>{ref}</Text>{d.fontFamily && <Text style={s.verseFontLabel}>{font.name}</Text>}</View><View style={s.verseEditActs}><TouchableOpacity onPress={() => openVerseFormat(b.id)}><Ionicons name="text" size={20} color={getVColor(b.boxColor).border} /></TouchableOpacity><TouchableOpacity onPress={() => setColorPick(b.id)}><Ionicons name="color-palette" size={20} color={getVColor(b.boxColor).border} /></TouchableOpacity><TouchableOpacity onPress={() => removeBlock(b.id)}><Ionicons name="close-circle" size={22} color={C.error} /></TouchableOpacity></View></View><HighlightedVerseText text={d.text} highlights={d.highlights} fontFamily={font.family} baseStyle={s.verseEditTxt} /></>; } catch { return null; } })()}</View>}</View>)}
+            <View style={{ height: 200 }} />
           </ScrollView>
+          {activeId && keyboardVisible && <RTToolbar style={tStyle} onToggle={toggleStyle} onSize={setFontSize} />}
         </KeyboardAvoidingView></SafeAreaView>
       </Modal>
 
@@ -1062,9 +1072,9 @@ const s = StyleSheet.create({
   backBtn: { padding: 8 }, addBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: C.primary, justifyContent: 'center', alignItems: 'center' },
   tabBar: { flexDirection: 'row', backgroundColor: C.surface, borderTopWidth: 1, borderTopColor: C.border, paddingTop: 6, paddingBottom: Platform.OS === 'android' ? 24 : 4, position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 1000 }, tabBtn: { flex: 1, alignItems: 'center', paddingVertical: 8 }, tabLbl: { fontSize: 10, marginTop: 2, color: C.textMuted }, tabLblAct: { color: C.primary, fontWeight: '600' },
   list: { padding: 16, paddingTop: 8 }, empty: { alignItems: 'center', paddingTop: 60 }, emptyTxt: { fontSize: 16, color: C.textMuted, marginTop: 16 },
-  toolbar: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.surfaceAlt, paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: C.border },
+  toolbar: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.surfaceAlt, paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 1, borderTopColor: C.border },
   toolBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center', borderRadius: 8, marginHorizontal: 2, flexDirection: 'row' }, toolBtnAct: { backgroundColor: C.primary }, toolTxt: { fontSize: 16, fontWeight: '600', color: C.textSec }, toolTxtAct: { color: C.textOn }, toolDiv: { width: 1, height: 24, backgroundColor: C.border, marginHorizontal: 8 },
-  dropdown: { position: 'absolute', top: 44, right: 8, backgroundColor: C.surface, borderRadius: 12, padding: 8, elevation: 5, zIndex: 100, minWidth: 100 }, dropItem: { paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8 },
+  dropdown: { position: 'absolute', bottom: 44, right: 8, backgroundColor: C.surface, borderRadius: 12, padding: 8, elevation: 5, zIndex: 100, minWidth: 100 }, dropItem: { paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8 },
   card: { backgroundColor: C.surface, borderRadius: 12, padding: 16, marginBottom: 12, borderLeftWidth: 4, elevation: 1 }, cardHdr: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   badge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }, badgeTxt: { fontSize: 12, fontWeight: '600', marginLeft: 4, textTransform: 'capitalize' },
   cardDate: { fontSize: 12, color: C.textMuted }, cardTitle: { fontSize: 17, fontWeight: '600', color: C.text, marginBottom: 6 }, cardPrev: { fontSize: 14, color: C.textSec, lineHeight: 20 },
