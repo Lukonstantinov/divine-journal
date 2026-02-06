@@ -1229,12 +1229,112 @@ const SearchScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: numb
 
 // Settings Screen
 const SettingsScreen = () => {
-  const [stats, setStats] = useState({ e: 0, b: 0, r: 0 });
-  useEffect(() => { (async () => { const e = await db.getFirstAsync<{ c: number }>('SELECT COUNT(*) as c FROM entries'); const b = await db.getFirstAsync<{ c: number }>('SELECT COUNT(*) as c FROM bookmarks'); const r = await db.getFirstAsync<{ c: number }>('SELECT COUNT(*) as c FROM reading_plan WHERE completed=1'); setStats({ e: e?.c || 0, b: b?.c || 0, r: r?.c || 0 }); })(); }, []);
+  const [stats, setStats] = useState({ e: 0, b: 0, r: 0, totalR: 0, streak: 0, fastDays: 0 });
+  const [byCat, setByCat] = useState<Record<Cat, number>>({ сон: 0, откровение: 0, мысль: 0, молитва: 0 });
+  const [byMonth, setByMonth] = useState<{ month: string; label: string; count: number }[]>([]);
+
+  useEffect(() => { (async () => {
+    const e = await db.getFirstAsync<{ c: number }>('SELECT COUNT(*) as c FROM entries');
+    const b = await db.getFirstAsync<{ c: number }>('SELECT COUNT(*) as c FROM bookmarks');
+    const r = await db.getFirstAsync<{ c: number }>('SELECT COUNT(*) as c FROM reading_plan WHERE completed=1');
+    const totalR = await db.getFirstAsync<{ c: number }>('SELECT COUNT(*) as c FROM reading_plan');
+
+    // Category breakdown
+    const cats = await db.getAllAsync<{ category: string; c: number }>('SELECT category, COUNT(*) as c FROM entries GROUP BY category');
+    const catMap: Record<Cat, number> = { сон: 0, откровение: 0, мысль: 0, молитва: 0 };
+    cats.forEach(c => { if (c.category in catMap) catMap[c.category as Cat] = c.c; });
+    setByCat(catMap);
+
+    // Monthly activity (last 6 months)
+    const months = await db.getAllAsync<{ month: string; c: number }>(
+      "SELECT strftime('%Y-%m', created_at) as month, COUNT(*) as c FROM entries GROUP BY month ORDER BY month DESC LIMIT 6"
+    );
+    const monthLabels = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
+    setByMonth(months.reverse().map(m => ({ month: m.month, label: monthLabels[parseInt(m.month.split('-')[1]) - 1], count: m.c })));
+
+    // Entry streak
+    const dates = await db.getAllAsync<{ d: string }>("SELECT DISTINCT date(created_at) as d FROM entries ORDER BY d DESC");
+    let streak = 0;
+    const today = fmtDate(new Date());
+    let expected = today;
+    for (const r of dates) {
+      if (r.d === expected) { streak++; const dt = new Date(expected); dt.setDate(dt.getDate() - 1); expected = fmtDate(dt); }
+      else if (r.d < expected) break;
+    }
+
+    // Fasting days
+    const fasts = await db.getAllAsync<Fasting>('SELECT * FROM fasting');
+    let fastDays = 0;
+    const now = new Date();
+    fasts.forEach(f => {
+      const start = new Date(f.start_date);
+      const end = f.end_date ? new Date(f.end_date) : now;
+      fastDays += Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    });
+
+    setStats({ e: e?.c || 0, b: b?.c || 0, r: r?.c || 0, totalR: totalR?.c || 0, streak, fastDays });
+  })(); }, []);
+
+  const totalEntries = Math.max(stats.e, 1);
+  const catColors: Record<Cat, string> = { сон: C.success, откровение: C.warning, мысль: C.primary, молитва: '#7B4B94' };
+  const maxMonth = Math.max(...byMonth.map(m => m.count), 1);
+  const readPct = stats.totalR > 0 ? Math.round((stats.r / stats.totalR) * 100) : 0;
+
   return (
     <View style={[s.screen, { paddingBottom: 80 }]}><View style={s.header}><Text style={s.headerTxt}>⚙️ Настройки</Text></View>
       <ScrollView style={s.settingsContent}>
-        <View style={s.section}><Text style={s.secTitle}>СТАТИСТИКА</Text><View style={s.statsRow}><View style={s.statCard}><Ionicons name="journal" size={24} color={C.primary} /><Text style={s.statNum}>{stats.e}</Text><Text style={s.statLbl}>Записей</Text></View><View style={s.statCard}><Ionicons name="bookmark" size={24} color={C.warning} /><Text style={s.statNum}>{stats.b}</Text><Text style={s.statLbl}>Закладок</Text></View><View style={s.statCard}><Ionicons name="checkmark-circle" size={24} color={C.success} /><Text style={s.statNum}>{stats.r}</Text><Text style={s.statLbl}>Прочитано</Text></View></View></View>
+        <View style={s.section}><Text style={s.secTitle}>ОБЗОР</Text>
+          <View style={s.statsRow}>
+            <View style={s.statCard}><Ionicons name="journal" size={24} color={C.primary} /><Text style={s.statNum}>{stats.e}</Text><Text style={s.statLbl}>Записей</Text></View>
+            <View style={s.statCard}><Ionicons name="bookmark" size={24} color={C.warning} /><Text style={s.statNum}>{stats.b}</Text><Text style={s.statLbl}>Закладок</Text></View>
+            <View style={s.statCard}><Ionicons name="checkmark-circle" size={24} color={C.success} /><Text style={s.statNum}>{stats.r}</Text><Text style={s.statLbl}>Прочитано</Text></View>
+          </View>
+        </View>
+
+        {stats.e > 0 && <View style={s.section}><Text style={s.secTitle}>ПО КАТЕГОРИЯМ</Text>
+          {(['сон','откровение','мысль','молитва'] as Cat[]).map(c => {
+            const count = byCat[c]; const pct = Math.round((count / totalEntries) * 100);
+            return <View key={c} style={s.statBar}>
+              <View style={{ width: 95, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name={catIcon(c) as any} size={14} color={catColors[c]} />
+                <Text style={s.statBarLbl}>{c}</Text>
+              </View>
+              <View style={s.statBarTrack}><View style={[s.statBarFill, { width: `${Math.max(pct, 2)}%`, backgroundColor: catColors[c] }]} /></View>
+              <Text style={s.statBarCnt}>{count} ({pct}%)</Text>
+            </View>;
+          })}
+        </View>}
+
+        {byMonth.length > 0 && <View style={s.section}><Text style={s.secTitle}>АКТИВНОСТЬ</Text>
+          <View style={s.activityChart}>
+            {byMonth.map((m, i) => (
+              <View key={i} style={{ flex: 1, alignItems: 'center' }}>
+                <Text style={{ fontSize: 11, color: C.textSec, marginBottom: 4 }}>{m.count}</Text>
+                <View style={[s.activityBar, { height: Math.max((m.count / maxMonth) * 80, 4) }]} />
+                <Text style={{ fontSize: 10, color: C.textMuted, marginTop: 4 }}>{m.label}</Text>
+              </View>
+            ))}
+          </View>
+        </View>}
+
+        {stats.totalR > 0 && <View style={s.section}><Text style={s.secTitle}>ПЛАН ЧТЕНИЯ</Text>
+          <View style={{ backgroundColor: C.surface, borderRadius: 12, padding: 16 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+              <Text style={{ fontSize: 14, color: C.textSec }}>{stats.r} из {stats.totalR}</Text>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: C.primary }}>{readPct}%</Text>
+            </View>
+            <View style={s.statBarTrack}><View style={[s.statBarFill, { width: `${readPct}%`, backgroundColor: C.success }]} /></View>
+          </View>
+        </View>}
+
+        <View style={s.section}><Text style={s.secTitle}>ДОСТИЖЕНИЯ</Text>
+          <View style={{ backgroundColor: C.surface, borderRadius: 12, padding: 16, gap: 12 }}>
+            <View style={s.achieveRow}><Ionicons name="flame" size={20} color={C.warning} /><Text style={{ fontSize: 14, color: C.text }}>Серия записей</Text><Text style={{ marginLeft: 'auto', fontSize: 16, fontWeight: '700', color: C.warning }}>{stats.streak} дн.</Text></View>
+            <View style={s.achieveRow}><Ionicons name="heart" size={20} color="#9C27B0" /><Text style={{ fontSize: 14, color: C.text }}>Дней поста</Text><Text style={{ marginLeft: 'auto', fontSize: 16, fontWeight: '700', color: '#9C27B0' }}>{stats.fastDays}</Text></View>
+            <View style={s.achieveRow}><Ionicons name="book" size={20} color={C.success} /><Text style={{ fontSize: 14, color: C.text }}>Глав прочитано</Text><Text style={{ marginLeft: 'auto', fontSize: 16, fontWeight: '700', color: C.success }}>{stats.r}</Text></View>
+          </View>
+        </View>
+
         <View style={s.section}><Text style={s.secTitle}>О ПРИЛОЖЕНИИ</Text><View style={s.aboutCard}><Ionicons name="book" size={40} color={C.primary} /><Text style={s.appName}>Divine Journal</Text><Text style={s.appVer}>Версия 3.2</Text><Text style={s.appDesc}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
       </ScrollView>
     </View>
@@ -1307,6 +1407,15 @@ const s = StyleSheet.create({
   folderChipAct: { backgroundColor: C.primary, borderColor: C.primary },
   folderChipTxt: { fontSize: 13, fontWeight: '500', color: C.textSec },
   folderChipTxtAct: { color: C.textOn },
+  // Statistics styles
+  statBar: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  statBarLbl: { fontSize: 13, color: C.textSec, textTransform: 'capitalize' },
+  statBarTrack: { flex: 1, height: 8, backgroundColor: C.borderLight, borderRadius: 4, overflow: 'hidden' },
+  statBarFill: { height: 8, borderRadius: 4 },
+  statBarCnt: { width: 70, textAlign: 'right', fontSize: 12, color: C.textMuted },
+  activityChart: { flexDirection: 'row', alignItems: 'flex-end', backgroundColor: C.surface, borderRadius: 12, padding: 16, paddingTop: 8, height: 140 },
+  activityBar: { width: 20, borderRadius: 4, backgroundColor: C.primary },
+  achieveRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   // Daily verse styles
   dailyVerse: { backgroundColor: '#FFF8E7', marginHorizontal: 16, marginBottom: 8, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: C.accent },
   dailyVerseLbl: { fontSize: 13, fontWeight: '700', color: C.warning, letterSpacing: 0.5 },
