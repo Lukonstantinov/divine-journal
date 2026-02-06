@@ -1252,8 +1252,8 @@ CREATE TABLE IF NOT EXISTS app_settings (
 
 Use this to track progress across sessions:
 
-- [ ] **Phase 1A**: Toolbar above keyboard
-- [ ] **Phase 1B**: Fix scrolling in long notes
+- [x] **Phase 1A**: Toolbar above keyboard
+- [x] **Phase 1B**: Fix scrolling in long notes
 - [ ] **Phase 2**: Folder system (DB + UI + filtering)
 - [ ] **Phase 4**: Daily verse widget
 - [ ] **Phase 4**: Reading reminders (notifications)
