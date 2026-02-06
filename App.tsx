@@ -64,8 +64,15 @@ const initDb = async () => {
     CREATE TABLE IF NOT EXISTS daily_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL UNIQUE, notes TEXT DEFAULT '');
     CREATE TABLE IF NOT EXISTS fasting (id INTEGER PRIMARY KEY AUTOINCREMENT, start_date TEXT NOT NULL, end_date TEXT, notes TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
     CREATE TABLE IF NOT EXISTS folders (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, color TEXT DEFAULT '#8B4513', icon TEXT DEFAULT 'folder', sort_order INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+    CREATE TABLE IF NOT EXISTS daily_verse_history (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL UNIQUE, verse_id TEXT NOT NULL, seen BOOLEAN DEFAULT 0);
   `);
   try { await db.execAsync('ALTER TABLE entries ADD COLUMN folder_id INTEGER DEFAULT NULL'); } catch (e) {}
+};
+
+const getDailyVerse = (date: Date): BibleVerse => {
+  const seed = date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate();
+  const idx = Math.abs((seed * 2654435761) | 0) % BIBLE_VERSES.length;
+  return BIBLE_VERSES[idx];
 };
 
 const genId = () => Math.random().toString(36).substr(2, 9);
@@ -135,7 +142,7 @@ const AppContent = () => {
   return (
     <>
       <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
-      {tab === 'journal' && <JournalScreen />}
+      {tab === 'journal' && <JournalScreen onNavigate={navigateToBible} />}
       {tab === 'bible' && <BibleScreen navTarget={navTarget} clearNavTarget={clearNavTarget} />}
       {tab === 'calendar' && <CalendarScreen onNavigate={navigateToBible} />}
       {tab === 'search' && <SearchScreen onNavigate={navigateToBible} />}
@@ -297,7 +304,7 @@ const VerseFormatModal = ({ visible, onClose, verseData, onSave }: { visible: bo
 };
 
 // Journal Screen
-const JournalScreen = () => {
+const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: number) => void }) => {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<Entry | null>(null);
@@ -324,11 +331,33 @@ const JournalScreen = () => {
   const [folderColor, setFolderColor] = useState(FOLDER_COLORS[0].color);
   const [folderIcon, setFolderIcon] = useState<string>('folder');
   const [editingFolder, setEditingFolder] = useState<Folder | null>(null);
+  // Daily verse state
+  const [dailyVerse, setDailyVerse] = useState<BibleVerse | null>(null);
+  const [verseStreak, setVerseStreak] = useState(0);
+  const [showDailyVerse, setShowDailyVerse] = useState(true);
 
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
     const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
     return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
+
+  useEffect(() => {
+    const today = new Date();
+    const verse = getDailyVerse(today);
+    setDailyVerse(verse);
+    const todayStr = fmtDate(today);
+    db.runAsync('INSERT OR IGNORE INTO daily_verse_history (date, verse_id, seen) VALUES (?,?,1)', [todayStr, verse.id]);
+    db.getAllAsync<{ date: string }>('SELECT date FROM daily_verse_history WHERE seen=1 ORDER BY date DESC')
+      .then(rows => {
+        let streak = 0;
+        let expected = todayStr;
+        for (const r of rows) {
+          if (r.date === expected) { streak++; const d = new Date(expected); d.setDate(d.getDate() - 1); expected = fmtDate(d); }
+          else break;
+        }
+        setVerseStreak(streak);
+      });
   }, []);
 
   const load = useCallback(async () => {
@@ -454,6 +483,20 @@ const JournalScreen = () => {
           <Text style={[s.folderChipTxt, { color: C.primary }]}>Папка</Text>
         </TouchableOpacity>
       </ScrollView>
+      {dailyVerse && showDailyVerse && <View style={s.dailyVerse}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={s.dailyVerseLbl}>Стих дня</Text>
+          <TouchableOpacity onPress={() => setShowDailyVerse(false)}><Ionicons name="close" size={18} color={C.textMuted} /></TouchableOpacity>
+        </View>
+        <Text style={s.dailyVerseTxt}>"{dailyVerse.text}"</Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+          <Text style={s.dailyVerseRef}>— {dailyVerse.book} {dailyVerse.chapter}:{dailyVerse.verse}</Text>
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            {verseStreak > 1 && <View style={s.streakBadge}><Ionicons name="flame" size={14} color={C.warning} /><Text style={{ fontSize: 12, color: C.warning, fontWeight: '600' }}>{verseStreak}</Text></View>}
+            <TouchableOpacity onPress={() => onNavigate(dailyVerse.book, dailyVerse.chapter)}><Ionicons name="book-outline" size={20} color={C.primary} /></TouchableOpacity>
+          </View>
+        </View>
+      </View>}
       <FlatList data={filteredEntries} keyExtractor={i => i.id.toString()} renderItem={({ item }) => {
         const cs = catStyle(item.category), vc = vCount(item.content), pv = preview(item.content);
         const isFasting = isFastingEntry(item);
@@ -1264,4 +1307,10 @@ const s = StyleSheet.create({
   folderChipAct: { backgroundColor: C.primary, borderColor: C.primary },
   folderChipTxt: { fontSize: 13, fontWeight: '500', color: C.textSec },
   folderChipTxtAct: { color: C.textOn },
+  // Daily verse styles
+  dailyVerse: { backgroundColor: '#FFF8E7', marginHorizontal: 16, marginBottom: 8, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: C.accent },
+  dailyVerseLbl: { fontSize: 13, fontWeight: '700', color: C.warning, letterSpacing: 0.5 },
+  dailyVerseTxt: { fontSize: 15, fontStyle: 'italic', color: C.text, lineHeight: 22, marginTop: 8, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif' },
+  dailyVerseRef: { fontSize: 13, fontWeight: '600', color: C.primary },
+  streakBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#FFF3E0', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
 });
