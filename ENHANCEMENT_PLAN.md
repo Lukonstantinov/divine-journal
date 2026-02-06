@@ -1254,8 +1254,8 @@ Use this to track progress across sessions:
 
 - [x] **Phase 1A**: Toolbar above keyboard
 - [x] **Phase 1B**: Fix scrolling in long notes
-- [ ] **Phase 2**: Folder system (DB + UI + filtering)
-- [ ] **Phase 4**: Daily verse widget
+- [x] **Phase 2**: Folder system (DB + UI + filtering)
+- [x] **Phase 4**: Daily verse widget
 - [ ] **Phase 4**: Reading reminders (notifications)
 - [ ] **Phase 3**: Statistics dashboard
 - [ ] **Phase 5**: Theme system (light/dark/sepia)
