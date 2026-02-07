@@ -1,13 +1,13 @@
 // metro.config.js — optimized for Termux (low inotify watcher limit)
 const { getDefaultConfig } = require('expo/metro-config');
-const path = require('path');
 
 const config = getDefaultConfig(__dirname);
 
-// Exclude test files and heavy directories from being watched
+// Use polling instead of inotify watchers to avoid ENOSPC on Termux/Android
 config.watcher = {
-  ...config.watcher,
-  additionalExts: ['cjs'],
+  watchman: false,
+  usePolling: true,
+  interval: 2000,
 };
 
 // Exclude directories that don't need watching
