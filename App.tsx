@@ -73,7 +73,8 @@ type Tab = 'journal' | 'bible' | 'calendar' | 'search' | 'settings';
 interface VerseHighlight { start: number; end: number; bold?: boolean; italic?: boolean; underline?: boolean; color?: string; }
 interface VerseData { book: string; chapter: number; verse: number; verseEnd?: number; text: string; fontFamily?: string; highlights?: VerseHighlight[]; }
 interface TStyle { bold?: boolean; italic?: boolean; underline?: boolean; fontSize?: string; highlight?: string; }
-interface Block { id: string; type: 'text' | 'verse' | 'divider'; content: string; boxColor?: string; textStyle?: TStyle; }
+interface StyleRange { start: number; end: number; bold?: boolean; italic?: boolean; underline?: boolean; highlight?: string; }
+interface Block { id: string; type: 'text' | 'verse' | 'divider'; content: string; boxColor?: string; textStyle?: TStyle; ranges?: StyleRange[]; }
 
 const TEXT_HIGHLIGHTS = [
   { id: 'yellow', bg: '#FFF9C4', label: 'Жёлтый' }, { id: 'green', bg: '#C8E6C9', label: 'Зелёный' },
@@ -428,6 +429,7 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const blockPositions = useRef<Record<string, number>>({});
+  const [sel, setSel] = useState<{start: number; end: number}>({start: 0, end: 0});
   // Folder state
   const [folders, setFolders] = useState<Folder[]>([]);
   const [activeFolder, setActiveFolder] = useState<number | null>(null);
@@ -529,10 +531,68 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
 
   const reset = () => { setEditing(null); setTitle(''); setBlocks([{ id: genId(), type: 'text', content: '' }]); setCat('мысль'); setModal(false); setActiveId(null); setTStyle({}); setEntryFolder(null); };
 
-  const updateBlock = (id: string, txt: string) => setBlocks(bs => bs.map(b => b.id === id ? { ...b, content: txt, textStyle: tStyle } : b));
-  const toggleStyle = (k: keyof TStyle) => { const nv = !tStyle[k]; setTStyle(p => ({ ...p, [k]: nv })); if (activeId) setBlocks(bs => bs.map(b => b.id === activeId ? { ...b, textStyle: { ...b.textStyle, [k]: nv } } : b)); };
+  const updateBlock = (id: string, txt: string) => setBlocks(bs => bs.map(b => {
+    if (b.id !== id) return b;
+    const upd: Block = { ...b, content: txt };
+    if (b.ranges?.length) {
+      const delta = txt.length - b.content.length;
+      if (delta !== 0) {
+        const cp = Math.max(0, sel.start - Math.max(0, delta));
+        upd.ranges = b.ranges.map(r => {
+          if (cp >= r.end) return r;
+          if (cp <= r.start) return { ...r, start: r.start + delta, end: r.end + delta };
+          return { ...r, end: Math.max(r.start + 1, r.end + delta) };
+        }).filter(r => r.start >= 0 && r.end <= txt.length && r.start < r.end);
+      }
+    }
+    return upd;
+  }));
+  const toggleStyle = (k: keyof TStyle) => {
+    if (activeId && sel.start < sel.end && (k === 'bold' || k === 'italic' || k === 'underline')) {
+      setBlocks(bs => bs.map(b => {
+        if (b.id !== activeId) return b;
+        const ranges = [...(b.ranges || [])];
+        let fullyCovered = true;
+        for (let i = sel.start; i < sel.end && fullyCovered; i++) {
+          if (!ranges.some(r => r[k] && r.start <= i && r.end > i)) fullyCovered = false;
+        }
+        if (fullyCovered && ranges.length > 0) {
+          const nr: StyleRange[] = [];
+          for (const r of ranges) {
+            if (!r[k] || r.end <= sel.start || r.start >= sel.end) { nr.push(r); continue; }
+            if (r.start < sel.start) nr.push({ ...r, end: sel.start });
+            if (r.end > sel.end) nr.push({ ...r, start: sel.end });
+          }
+          return { ...b, ranges: nr };
+        }
+        return { ...b, ranges: [...ranges, { start: sel.start, end: sel.end, [k]: true }] };
+      }));
+      setTStyle(p => ({ ...p, [k]: !p[k] }));
+    } else {
+      const nv = !tStyle[k]; setTStyle(p => ({ ...p, [k]: nv }));
+      if (activeId) setBlocks(bs => bs.map(b => b.id === activeId ? { ...b, textStyle: { ...b.textStyle, [k]: nv } } : b));
+    }
+  };
   const setFontSize = (sz: string) => { setTStyle(p => ({ ...p, fontSize: sz })); if (activeId) setBlocks(bs => bs.map(b => b.id === activeId ? { ...b, textStyle: { ...b.textStyle, fontSize: sz } } : b)); };
-  const setHighlight = (color: string | null) => { setTStyle(p => ({ ...p, highlight: color || undefined })); if (activeId) setBlocks(bs => bs.map(b => b.id === activeId ? { ...b, textStyle: { ...b.textStyle, highlight: color || undefined } } : b)); };
+  const setHighlight = (color: string | null) => {
+    if (activeId && sel.start < sel.end) {
+      setBlocks(bs => bs.map(b => {
+        if (b.id !== activeId) return b;
+        const ranges = [...(b.ranges || [])];
+        if (color) return { ...b, ranges: [...ranges, { start: sel.start, end: sel.end, highlight: color }] };
+        const nr: StyleRange[] = [];
+        for (const r of ranges) {
+          if (!r.highlight || r.end <= sel.start || r.start >= sel.end) { nr.push(r); continue; }
+          if (r.start < sel.start) nr.push({ ...r, end: sel.start });
+          if (r.end > sel.end) nr.push({ ...r, start: sel.end });
+        }
+        return { ...b, ranges: nr };
+      }));
+    } else {
+      if (activeId) setBlocks(bs => bs.map(b => b.id === activeId ? { ...b, textStyle: { ...b.textStyle, highlight: color || undefined } } : b));
+    }
+    setTStyle(p => ({ ...p, highlight: color || undefined }));
+  };
   const addDivider = () => { const div: Block = { id: genId(), type: 'divider', content: '' }; if (activeId) { setBlocks(bs => { const i = bs.findIndex(b => b.id === activeId); const n = [...bs]; n.splice(i + 1, 0, div); return n; }); } else { setBlocks(bs => [...bs, div]); } };
   const moveBlock = (idx: number, dir: -1 | 1) => setBlocks(bs => { const n = [...bs]; const t = idx + dir; if (t < 0 || t >= n.length) return bs; [n[idx], n[t]] = [n[t], n[idx]]; return n; });
 
@@ -570,7 +630,28 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
 
   const renderVerse = (b: Block) => { try { const d = JSON.parse(b.content) as VerseData, vc = getVColor(b.boxColor), font = getVFont(d.fontFamily), ref = d.verseEnd ? `${d.book} ${d.chapter}:${d.verse}-${d.verseEnd}` : `${d.book} ${d.chapter}:${d.verse}`; return <View style={[s.verseView, { backgroundColor: vc.bg, borderLeftColor: vc.border }]}><View style={s.verseHdr}><Ionicons name="book" size={16} color={vc.border} /><Text style={[s.verseRef, { color: vc.border }]}>{ref}</Text>{d.fontFamily && <Text style={s.verseFontLabel}>{font.name}</Text>}</View><HighlightedVerseText text={d.text} highlights={d.highlights} fontFamily={font.family} baseStyle={s.verseTxt} /></View>; } catch { return null; } };
 
-  const renderText = (b: Block) => { if (!b.content) return null; const st: any = { ...s.viewTxt, color: theme.text }; if (b.textStyle?.bold) st.fontWeight = 'bold'; if (b.textStyle?.italic) st.fontStyle = 'italic'; if (b.textStyle?.underline) st.textDecorationLine = 'underline'; if (b.textStyle?.fontSize) st.fontSize = getFSize(b.textStyle.fontSize); if (b.textStyle?.highlight) { const hl = TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight); if (hl) st.backgroundColor = hl.bg; } return <Text style={st}>{b.content}</Text>; };
+  const renderText = (b: Block) => {
+    if (!b.content) return null;
+    const base: any = { ...s.viewTxt, color: theme.text };
+    if (b.textStyle?.fontSize) base.fontSize = getFSize(b.textStyle.fontSize);
+    if (b.textStyle?.highlight) { const hl = TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight); if (hl) base.backgroundColor = hl.bg; }
+    if (!b.ranges?.length) {
+      if (b.textStyle?.bold) base.fontWeight = 'bold'; if (b.textStyle?.italic) base.fontStyle = 'italic'; if (b.textStyle?.underline) base.textDecorationLine = 'underline';
+      return <Text style={base}>{b.content}</Text>;
+    }
+    const len = b.content.length, pts = new Set<number>([0, len]);
+    b.ranges.forEach(r => { pts.add(Math.max(0, r.start)); pts.add(Math.min(len, r.end)); });
+    const sorted = Array.from(pts).sort((a, c) => a - c);
+    const parts: React.ReactNode[] = [];
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const ps = sorted[i], pe = sorted[i + 1];
+      const st: any = { ...base };
+      if (b.textStyle?.bold) st.fontWeight = 'bold'; if (b.textStyle?.italic) st.fontStyle = 'italic'; if (b.textStyle?.underline) st.textDecorationLine = 'underline';
+      for (const r of b.ranges) { if (r.start <= ps && r.end >= pe) { if (r.bold) st.fontWeight = 'bold'; if (r.italic) st.fontStyle = 'italic'; if (r.underline) st.textDecorationLine = 'underline'; if (r.highlight) { const hl = TEXT_HIGHLIGHTS.find(h => h.id === r.highlight); if (hl) st.backgroundColor = hl.bg; } } }
+      parts.push(<Text key={i} style={st}>{b.content.slice(ps, pe)}</Text>);
+    }
+    return <Text>{parts}</Text>;
+  };
 
   const filteredEntries = activeFolder ? entries.filter(e => e.folder_id === activeFolder) : entries;
   const getFolderName = (id: number | null) => { if (!id) return null; const f = folders.find(x => x.id === id); return f || null; };
@@ -578,20 +659,20 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
   return (
     <View style={[s.screen, { paddingBottom: 80, backgroundColor: theme.bg }]}>
       <View style={s.header}><Text style={[s.headerTxt, { color: theme.text }]}>📖 Духовный дневник</Text><TouchableOpacity style={[s.addBtn, { backgroundColor: theme.primary }]} onPress={() => openEdit()}><Ionicons name="add" size={28} color={theme.textOn} /></TouchableOpacity></View>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.folderBar} contentContainerStyle={{ paddingHorizontal: 12, gap: 8 }}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.folderBar} contentContainerStyle={{ paddingHorizontal: 12, gap: 8, alignItems: 'center', paddingVertical: 4 }}>
         <TouchableOpacity style={[s.folderChip, !activeFolder && s.folderChipAct]} onPress={() => setActiveFolder(null)}>
-          <Ionicons name="albums" size={14} color={!activeFolder ? C.textOn : C.textSec} />
-          <Text style={[s.folderChipTxt, !activeFolder && s.folderChipTxtAct]}>Все ({entries.length})</Text>
+          <Ionicons name="albums" size={14} color={!activeFolder ? theme.textOn : theme.textSec} />
+          <Text style={[s.folderChipTxt, { color: theme.textSec }, !activeFolder && s.folderChipTxtAct]}>Все ({entries.length})</Text>
         </TouchableOpacity>
         {folders.map(f => (
-          <TouchableOpacity key={f.id} style={[s.folderChip, activeFolder === f.id && { backgroundColor: f.color, borderColor: f.color }]} onPress={() => setActiveFolder(activeFolder === f.id ? null : f.id)}>
-            <Ionicons name={f.icon as any} size={14} color={activeFolder === f.id ? C.textOn : f.color} />
+          <TouchableOpacity key={f.id} style={[s.folderChip, { borderColor: theme.border }, activeFolder === f.id && { backgroundColor: f.color, borderColor: f.color }]} onPress={() => setActiveFolder(activeFolder === f.id ? null : f.id)}>
+            <Ionicons name={f.icon as any} size={14} color={activeFolder === f.id ? theme.textOn : f.color} />
             <Text style={[s.folderChipTxt, activeFolder === f.id && s.folderChipTxtAct]}>{f.name} ({folderEntryCount(f.id)})</Text>
           </TouchableOpacity>
         ))}
-        <TouchableOpacity style={[s.folderChip, { borderStyle: 'dashed' }]} onPress={() => { setEditingFolder(null); setFolderName(''); setFolderColor(FOLDER_COLORS[0].color); setFolderIcon('folder'); setShowFolderMgmt(true); }}>
-          <Ionicons name="add" size={14} color={C.primary} />
-          <Text style={[s.folderChipTxt, { color: C.primary }]}>Папка</Text>
+        <TouchableOpacity style={[s.folderChip, { borderColor: theme.primary, borderWidth: 1.5, backgroundColor: theme.primary + '10', paddingHorizontal: 16 }]} onPress={() => { setEditingFolder(null); setFolderName(''); setFolderColor(FOLDER_COLORS[0].color); setFolderIcon('folder'); setShowFolderMgmt(true); }}>
+          <Ionicons name="add-circle-outline" size={16} color={theme.primary} />
+          <Text style={[s.folderChipTxt, { color: theme.primary, fontWeight: '600' }]}>Папка</Text>
         </TouchableOpacity>
       </ScrollView>
       {dailyVerse && showDailyVerse && <View style={s.dailyVerse}>
@@ -656,7 +737,7 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
             <Text style={s.label}>Заголовок</Text>
             <TextInput style={s.input} value={title} onChangeText={setTitle} placeholder="Название..." placeholderTextColor={C.textMuted} />
             <Text style={s.label}>Содержание</Text>
-            {blocks.map((b, i) => <View key={b.id} onLayout={(e) => { blockPositions.current[b.id] = e.nativeEvent.layout.y; }}>{b.type === 'divider' ? <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 8, gap: 8 }}><View style={{ flex: 1, height: 1, backgroundColor: C.border }} /><View style={{ flexDirection: 'row', gap: 4 }}>{i > 0 && <TouchableOpacity onPress={() => moveBlock(i, -1)}><Ionicons name="arrow-up" size={16} color={C.textMuted} /></TouchableOpacity>}{i < blocks.length - 1 && <TouchableOpacity onPress={() => moveBlock(i, 1)}><Ionicons name="arrow-down" size={16} color={C.textMuted} /></TouchableOpacity>}<TouchableOpacity onPress={() => removeBlock(b.id)}><Ionicons name="close" size={16} color={C.error} /></TouchableOpacity></View></View> : b.type === 'text' ? <View style={b.textStyle?.highlight ? { borderLeftWidth: 4, borderLeftColor: TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight)?.bg, borderRadius: 8, marginBottom: 4, paddingLeft: 4 } : undefined}><View style={{ flexDirection: 'row', alignItems: 'center' }}><View style={{ flex: 1 }}><TextInput style={[s.input, s.textArea, activeId === b.id && s.inputAct, b.textStyle?.fontSize && { fontSize: getFSize(b.textStyle.fontSize) }, b.textStyle?.bold && { fontWeight: 'bold' }, b.textStyle?.italic && { fontStyle: 'italic' }]} value={b.content} onChangeText={t => updateBlock(b.id, t)} onFocus={() => { setActiveId(b.id); setTStyle(b.textStyle || {}); setTimeout(() => { const y = blockPositions.current[b.id]; if (y !== undefined && scrollRef.current) { scrollRef.current.scrollTo({ y: Math.max(0, y - 100), animated: true }); } }, 150); }} placeholder={i === 0 ? "Начните писать..." : "Продолжайте..."} placeholderTextColor={C.textMuted} multiline textAlignVertical="top" /></View>{blocks.length > 1 && <View style={{ paddingLeft: 4, gap: 2 }}>{i > 0 && <TouchableOpacity onPress={() => moveBlock(i, -1)}><Ionicons name="chevron-up" size={16} color={C.textMuted} /></TouchableOpacity>}{i < blocks.length - 1 && <TouchableOpacity onPress={() => moveBlock(i, 1)}><Ionicons name="chevron-down" size={16} color={C.textMuted} /></TouchableOpacity>}</View>}</View><TouchableOpacity style={s.insertBtn} onPress={() => { setInsertId(b.id); setVpick(true); }}><Ionicons name="add-circle" size={18} color={C.primary} /><Text style={s.insertTxt}>Вставить стихи</Text></TouchableOpacity></View> : <View style={[s.verseEdit, { backgroundColor: getVColor(b.boxColor).bg, borderLeftColor: getVColor(b.boxColor).border }]}>{(() => { try { const d = JSON.parse(b.content) as VerseData; const font = getVFont(d.fontFamily); const ref = d.verseEnd ? `${d.book} ${d.chapter}:${d.verse}-${d.verseEnd}` : `${d.book} ${d.chapter}:${d.verse}`; return <><View style={s.verseEditHdr}><View style={s.verseEditLeft}><Ionicons name="book" size={16} color={getVColor(b.boxColor).border} /><Text style={[s.verseRef, { color: getVColor(b.boxColor).border }]}>{ref}</Text>{d.fontFamily && <Text style={s.verseFontLabel}>{font.name}</Text>}</View><View style={s.verseEditActs}><TouchableOpacity onPress={() => openVerseFormat(b.id)}><Ionicons name="text" size={20} color={getVColor(b.boxColor).border} /></TouchableOpacity><TouchableOpacity onPress={() => setColorPick(b.id)}><Ionicons name="color-palette" size={20} color={getVColor(b.boxColor).border} /></TouchableOpacity><TouchableOpacity onPress={() => removeBlock(b.id)}><Ionicons name="close-circle" size={22} color={C.error} /></TouchableOpacity></View></View><HighlightedVerseText text={d.text} highlights={d.highlights} fontFamily={font.family} baseStyle={s.verseEditTxt} /></>; } catch { return null; } })()}</View>}</View>)}
+            {blocks.map((b, i) => <View key={b.id} onLayout={(e) => { blockPositions.current[b.id] = e.nativeEvent.layout.y; }}>{b.type === 'divider' ? <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 8, gap: 8 }}><View style={{ flex: 1, height: 1, backgroundColor: C.border }} /><View style={{ flexDirection: 'row', gap: 4 }}>{i > 0 && <TouchableOpacity onPress={() => moveBlock(i, -1)}><Ionicons name="arrow-up" size={16} color={C.textMuted} /></TouchableOpacity>}{i < blocks.length - 1 && <TouchableOpacity onPress={() => moveBlock(i, 1)}><Ionicons name="arrow-down" size={16} color={C.textMuted} /></TouchableOpacity>}<TouchableOpacity onPress={() => removeBlock(b.id)}><Ionicons name="close" size={16} color={C.error} /></TouchableOpacity></View></View> : b.type === 'text' ? <View style={b.textStyle?.highlight ? { borderLeftWidth: 4, borderLeftColor: TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight)?.bg, borderRadius: 8, marginBottom: 4, paddingLeft: 4 } : undefined}><View style={{ flexDirection: 'row', alignItems: 'center' }}><View style={{ flex: 1 }}><TextInput style={[s.input, s.textArea, activeId === b.id && s.inputAct, b.textStyle?.fontSize && { fontSize: getFSize(b.textStyle.fontSize) }, b.textStyle?.bold && { fontWeight: 'bold' }, b.textStyle?.italic && { fontStyle: 'italic' }]} value={b.content} onChangeText={t => updateBlock(b.id, t)} onSelectionChange={(e) => setSel(e.nativeEvent.selection)} onFocus={() => { setActiveId(b.id); setTStyle(b.textStyle || {}); setSel({start: 0, end: 0}); setTimeout(() => { const y = blockPositions.current[b.id]; if (y !== undefined && scrollRef.current) { scrollRef.current.scrollTo({ y: Math.max(0, y - 100), animated: true }); } }, 150); }} placeholder={i === 0 ? "Начните писать..." : "Продолжайте..."} placeholderTextColor={C.textMuted} multiline textAlignVertical="top" /></View>{blocks.length > 1 && <View style={{ paddingLeft: 4, gap: 2 }}>{i > 0 && <TouchableOpacity onPress={() => moveBlock(i, -1)}><Ionicons name="chevron-up" size={16} color={C.textMuted} /></TouchableOpacity>}{i < blocks.length - 1 && <TouchableOpacity onPress={() => moveBlock(i, 1)}><Ionicons name="chevron-down" size={16} color={C.textMuted} /></TouchableOpacity>}</View>}</View><TouchableOpacity style={s.insertBtn} onPress={() => { setInsertId(b.id); setVpick(true); }}><Ionicons name="add-circle" size={18} color={C.primary} /><Text style={s.insertTxt}>Вставить стихи</Text></TouchableOpacity></View> : <View style={[s.verseEdit, { backgroundColor: getVColor(b.boxColor).bg, borderLeftColor: getVColor(b.boxColor).border }]}>{(() => { try { const d = JSON.parse(b.content) as VerseData; const font = getVFont(d.fontFamily); const ref = d.verseEnd ? `${d.book} ${d.chapter}:${d.verse}-${d.verseEnd}` : `${d.book} ${d.chapter}:${d.verse}`; return <><View style={s.verseEditHdr}><View style={s.verseEditLeft}><Ionicons name="book" size={16} color={getVColor(b.boxColor).border} /><Text style={[s.verseRef, { color: getVColor(b.boxColor).border }]}>{ref}</Text>{d.fontFamily && <Text style={s.verseFontLabel}>{font.name}</Text>}</View><View style={s.verseEditActs}><TouchableOpacity onPress={() => openVerseFormat(b.id)}><Ionicons name="text" size={20} color={getVColor(b.boxColor).border} /></TouchableOpacity><TouchableOpacity onPress={() => setColorPick(b.id)}><Ionicons name="color-palette" size={20} color={getVColor(b.boxColor).border} /></TouchableOpacity><TouchableOpacity onPress={() => removeBlock(b.id)}><Ionicons name="close-circle" size={22} color={C.error} /></TouchableOpacity></View></View><HighlightedVerseText text={d.text} highlights={d.highlights} fontFamily={font.family} baseStyle={s.verseEditTxt} /></>; } catch { return null; } })()}</View>}</View>)}
             <View style={{ height: 200 }} />
           </ScrollView>
           {activeId && keyboardVisible && <RTToolbar style={tStyle} onToggle={toggleStyle} onSize={setFontSize} onHighlight={setHighlight} onDivider={addDivider} />}
@@ -777,6 +858,7 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
   const [noteKbVisible, setNoteKbVisible] = useState(false);
   const noteScrollRef = useRef<ScrollView>(null);
   const noteBlockPos = useRef<Record<string, number>>({});
+  const [noteSel, setNoteSel] = useState<{start: number; end: number}>({start: 0, end: 0});
   const [pickBook, setPickBook] = useState<BibleBook | null>(null);
   // Reading Plan Generator
   const [showPlanGen, setShowPlanGen] = useState(false);
@@ -875,10 +957,68 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
     load(); setEditNote(false);
   };
 
-  const updateNoteBlock = (id: string, txt: string) => setNoteBlocks(bs => bs.map(b => b.id === id ? { ...b, content: txt, textStyle: noteTStyle } : b));
-  const toggleNoteStyle = (k: keyof TStyle) => { const nv = !noteTStyle[k]; setNoteTStyle(p => ({ ...p, [k]: nv })); if (noteActiveId) setNoteBlocks(bs => bs.map(b => b.id === noteActiveId ? { ...b, textStyle: { ...b.textStyle, [k]: nv } } : b)); };
+  const updateNoteBlock = (id: string, txt: string) => setNoteBlocks(bs => bs.map(b => {
+    if (b.id !== id) return b;
+    const upd: Block = { ...b, content: txt };
+    if (b.ranges?.length) {
+      const delta = txt.length - b.content.length;
+      if (delta !== 0) {
+        const cp = Math.max(0, noteSel.start - Math.max(0, delta));
+        upd.ranges = b.ranges.map(r => {
+          if (cp >= r.end) return r;
+          if (cp <= r.start) return { ...r, start: r.start + delta, end: r.end + delta };
+          return { ...r, end: Math.max(r.start + 1, r.end + delta) };
+        }).filter(r => r.start >= 0 && r.end <= txt.length && r.start < r.end);
+      }
+    }
+    return upd;
+  }));
+  const toggleNoteStyle = (k: keyof TStyle) => {
+    if (noteActiveId && noteSel.start < noteSel.end && (k === 'bold' || k === 'italic' || k === 'underline')) {
+      setNoteBlocks(bs => bs.map(b => {
+        if (b.id !== noteActiveId) return b;
+        const ranges = [...(b.ranges || [])];
+        let fullyCovered = true;
+        for (let i = noteSel.start; i < noteSel.end && fullyCovered; i++) {
+          if (!ranges.some(r => r[k] && r.start <= i && r.end > i)) fullyCovered = false;
+        }
+        if (fullyCovered && ranges.length > 0) {
+          const nr: StyleRange[] = [];
+          for (const r of ranges) {
+            if (!r[k] || r.end <= noteSel.start || r.start >= noteSel.end) { nr.push(r); continue; }
+            if (r.start < noteSel.start) nr.push({ ...r, end: noteSel.start });
+            if (r.end > noteSel.end) nr.push({ ...r, start: noteSel.end });
+          }
+          return { ...b, ranges: nr };
+        }
+        return { ...b, ranges: [...ranges, { start: noteSel.start, end: noteSel.end, [k]: true }] };
+      }));
+      setNoteTStyle(p => ({ ...p, [k]: !p[k] }));
+    } else {
+      const nv = !noteTStyle[k]; setNoteTStyle(p => ({ ...p, [k]: nv }));
+      if (noteActiveId) setNoteBlocks(bs => bs.map(b => b.id === noteActiveId ? { ...b, textStyle: { ...b.textStyle, [k]: nv } } : b));
+    }
+  };
   const setNoteFontSize = (sz: string) => { setNoteTStyle(p => ({ ...p, fontSize: sz })); if (noteActiveId) setNoteBlocks(bs => bs.map(b => b.id === noteActiveId ? { ...b, textStyle: { ...b.textStyle, fontSize: sz } } : b)); };
-  const setNoteHighlight = (color: string | null) => { setNoteTStyle(p => ({ ...p, highlight: color || undefined })); if (noteActiveId) setNoteBlocks(bs => bs.map(b => b.id === noteActiveId ? { ...b, textStyle: { ...b.textStyle, highlight: color || undefined } } : b)); };
+  const setNoteHighlight = (color: string | null) => {
+    if (noteActiveId && noteSel.start < noteSel.end) {
+      setNoteBlocks(bs => bs.map(b => {
+        if (b.id !== noteActiveId) return b;
+        const ranges = [...(b.ranges || [])];
+        if (color) return { ...b, ranges: [...ranges, { start: noteSel.start, end: noteSel.end, highlight: color }] };
+        const nr: StyleRange[] = [];
+        for (const r of ranges) {
+          if (!r.highlight || r.end <= noteSel.start || r.start >= noteSel.end) { nr.push(r); continue; }
+          if (r.start < noteSel.start) nr.push({ ...r, end: noteSel.start });
+          if (r.end > noteSel.end) nr.push({ ...r, start: noteSel.end });
+        }
+        return { ...b, ranges: nr };
+      }));
+    } else {
+      if (noteActiveId) setNoteBlocks(bs => bs.map(b => b.id === noteActiveId ? { ...b, textStyle: { ...b.textStyle, highlight: color || undefined } } : b));
+    }
+    setNoteTStyle(p => ({ ...p, highlight: color || undefined }));
+  };
   const addNoteDivider = () => { const div: Block = { id: genId(), type: 'divider', content: '' }; if (noteActiveId) { setNoteBlocks(bs => { const i = bs.findIndex(b => b.id === noteActiveId); const n = [...bs]; n.splice(i + 1, 0, div); return n; }); } else { setNoteBlocks(bs => [...bs, div]); } };
   const addNoteTextBlock = () => { setNoteBlocks(bs => [...bs, { id: genId(), type: 'text', content: '' }]); };
   const removeNoteBlock = (id: string) => setNoteBlocks(bs => { const f = bs.filter(b => b.id !== id); return f.length === 0 || !f.some(b => b.type === 'text') ? [{ id: genId(), type: 'text', content: '' }] : f; });
@@ -1120,7 +1260,7 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
             {noteBlocks.map((b, i) => <View key={b.id} onLayout={(e) => { noteBlockPos.current[b.id] = e.nativeEvent.layout.y; }}>
               {b.type === 'divider' ? <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 8, gap: 8 }}><View style={{ flex: 1, height: 1, backgroundColor: C.border }} /><TouchableOpacity onPress={() => removeNoteBlock(b.id)}><Ionicons name="close" size={16} color={C.error} /></TouchableOpacity></View>
               : <View style={b.textStyle?.highlight ? { borderLeftWidth: 4, borderLeftColor: TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight)?.bg, borderRadius: 8, marginBottom: 4, paddingLeft: 4 } : undefined}>
-                <TextInput style={[s.input, s.textArea, noteActiveId === b.id && s.inputAct, b.textStyle?.fontSize && { fontSize: getFSize(b.textStyle.fontSize) }, b.textStyle?.bold && { fontWeight: 'bold' }, b.textStyle?.italic && { fontStyle: 'italic' }]} value={b.content} onChangeText={t => updateNoteBlock(b.id, t)} onFocus={() => { setNoteActiveId(b.id); setNoteTStyle(b.textStyle || {}); setTimeout(() => { const y = noteBlockPos.current[b.id]; if (y !== undefined && noteScrollRef.current) { noteScrollRef.current.scrollTo({ y: Math.max(0, y - 100), animated: true }); } }, 150); }} placeholder={i === 0 ? "Мысли, молитвы..." : "Продолжайте..."} placeholderTextColor={C.textMuted} multiline textAlignVertical="top" />
+                <TextInput style={[s.input, s.textArea, noteActiveId === b.id && s.inputAct, b.textStyle?.fontSize && { fontSize: getFSize(b.textStyle.fontSize) }, b.textStyle?.bold && { fontWeight: 'bold' }, b.textStyle?.italic && { fontStyle: 'italic' }]} value={b.content} onChangeText={t => updateNoteBlock(b.id, t)} onSelectionChange={(e) => setNoteSel(e.nativeEvent.selection)} onFocus={() => { setNoteActiveId(b.id); setNoteTStyle(b.textStyle || {}); setNoteSel({start: 0, end: 0}); setTimeout(() => { const y = noteBlockPos.current[b.id]; if (y !== undefined && noteScrollRef.current) { noteScrollRef.current.scrollTo({ y: Math.max(0, y - 100), animated: true }); } }, 150); }} placeholder={i === 0 ? "Мысли, молитвы..." : "Продолжайте..."} placeholderTextColor={C.textMuted} multiline textAlignVertical="top" />
               </View>}
             </View>)}
             <TouchableOpacity style={s.insertBtn} onPress={addNoteTextBlock}>
@@ -1925,7 +2065,7 @@ const s = StyleSheet.create({
   fmtHlItem: { flexDirection: 'row', backgroundColor: C.surface, padding: 12, borderRadius: 10, marginBottom: 8, alignItems: 'center' }, fmtHlRange: { fontSize: 13, fontWeight: '600', color: C.primary }, fmtHlPreview: { fontSize: 13, color: C.textSec, fontStyle: 'italic' },
   fmtHlStyles: { flexDirection: 'row', gap: 6, marginTop: 4 }, fmtHlTag: { fontSize: 11, color: C.textMuted, backgroundColor: C.surfaceAlt, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }, fmtHlColorDot: { width: 16, height: 16, borderRadius: 8 },
   // Folder styles
-  folderBar: { maxHeight: 44, marginBottom: 4 },
+  folderBar: { marginBottom: 8 },
   folderChip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, gap: 6 },
   folderChipAct: { backgroundColor: C.primary, borderColor: C.primary },
   folderChipTxt: { fontSize: 13, fontWeight: '500', color: C.textSec },
