@@ -756,6 +756,12 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
   const [showAdd, setShowAdd] = useState(false);
   const [editNote, setEditNote] = useState(false);
   const [noteTxt, setNoteTxt] = useState('');
+  const [noteBlocks, setNoteBlocks] = useState<Block[]>([{ id: genId(), type: 'text', content: '' }]);
+  const [noteActiveId, setNoteActiveId] = useState<string | null>(null);
+  const [noteTStyle, setNoteTStyle] = useState<TStyle>({});
+  const [noteKbVisible, setNoteKbVisible] = useState(false);
+  const noteScrollRef = useRef<ScrollView>(null);
+  const noteBlockPos = useRef<Record<string, number>>({});
   const [pickBook, setPickBook] = useState<BibleBook | null>(null);
   // Reading Plan Generator
   const [showPlanGen, setShowPlanGen] = useState(false);
@@ -827,6 +833,45 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
     });
     return total;
   }, [fasts]);
+
+  // Note block editing functions
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => setNoteKbVisible(true));
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setNoteKbVisible(false));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
+
+  const parseNote = (n: string): Block[] => {
+    try { const p = JSON.parse(n); if (Array.isArray(p) && p[0]?.type) return p; } catch {}
+    return [{ id: genId(), type: 'text', content: n || '' }];
+  };
+
+  const openNoteEdit = () => {
+    const raw = notes[selDate] || '';
+    setNoteBlocks(parseNote(raw));
+    setNoteActiveId(null);
+    setNoteTStyle({});
+    setEditNote(true);
+  };
+
+  const saveNoteBlocks = async () => {
+    const json = JSON.stringify(noteBlocks);
+    await db.runAsync('INSERT OR REPLACE INTO daily_notes (date, notes) VALUES (?,?)', [selDate, json]);
+    load(); setEditNote(false);
+  };
+
+  const updateNoteBlock = (id: string, txt: string) => setNoteBlocks(bs => bs.map(b => b.id === id ? { ...b, content: txt, textStyle: noteTStyle } : b));
+  const toggleNoteStyle = (k: keyof TStyle) => { const nv = !noteTStyle[k]; setNoteTStyle(p => ({ ...p, [k]: nv })); if (noteActiveId) setNoteBlocks(bs => bs.map(b => b.id === noteActiveId ? { ...b, textStyle: { ...b.textStyle, [k]: nv } } : b)); };
+  const setNoteFontSize = (sz: string) => { setNoteTStyle(p => ({ ...p, fontSize: sz })); if (noteActiveId) setNoteBlocks(bs => bs.map(b => b.id === noteActiveId ? { ...b, textStyle: { ...b.textStyle, fontSize: sz } } : b)); };
+  const setNoteHighlight = (color: string | null) => { setNoteTStyle(p => ({ ...p, highlight: color || undefined })); if (noteActiveId) setNoteBlocks(bs => bs.map(b => b.id === noteActiveId ? { ...b, textStyle: { ...b.textStyle, highlight: color || undefined } } : b)); };
+  const addNoteDivider = () => { const div: Block = { id: genId(), type: 'divider', content: '' }; if (noteActiveId) { setNoteBlocks(bs => { const i = bs.findIndex(b => b.id === noteActiveId); const n = [...bs]; n.splice(i + 1, 0, div); return n; }); } else { setNoteBlocks(bs => [...bs, div]); } };
+  const addNoteTextBlock = () => { setNoteBlocks(bs => [...bs, { id: genId(), type: 'text', content: '' }]); };
+  const removeNoteBlock = (id: string) => setNoteBlocks(bs => { const f = bs.filter(b => b.id !== id); return f.length === 0 || !f.some(b => b.type === 'text') ? [{ id: genId(), type: 'text', content: '' }] : f; });
+
+  const renderNotePreview = (raw: string): string => {
+    try { const p = JSON.parse(raw); if (Array.isArray(p) && p[0]?.type) return p.filter((b: Block) => b.type === 'text').map((b: Block) => b.content).join(' ').substring(0, 200); } catch {}
+    return raw?.substring(0, 200) || '';
+  };
 
   // Reading Plan Generator
   const resetPlanGen = () => { setPlanStep('book'); setPlanBook(null); setPlanStartCh(1); setPlanPace(1); setPlanDays(30); };
@@ -953,9 +998,9 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
           <View style={s.daySecHdr}>
             <Ionicons name="create" size={18} color={C.primary} />
             <Text style={s.daySecTitle}>Заметки дня</Text>
-            <TouchableOpacity onPress={() => { setNoteTxt(notes[selDate] || ''); setEditNote(true); }}><Ionicons name="pencil" size={18} color={C.textMuted} /></TouchableOpacity>
+            <TouchableOpacity onPress={openNoteEdit}><Ionicons name="pencil" size={18} color={C.textMuted} /></TouchableOpacity>
           </View>
-          {notes[selDate] ? <Text style={s.noteText}>{notes[selDate]}</Text> : <Text style={s.emptyDay}>Нажмите карандаш для добавления</Text>}
+          {notes[selDate] ? <Text style={s.noteText}>{renderNotePreview(notes[selDate])}</Text> : <Text style={s.emptyDay}>Нажмите карандаш для добавления</Text>}
         </View>
         <View style={s.daySec}>
           <View style={s.daySecHdr}>
@@ -1049,17 +1094,27 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
         </View>
       </Modal>
 
-      <Modal visible={editNote} animationType="slide" transparent>
-        <View style={s.sheetOverlay}>
-          <View style={s.sheet}>
-            <View style={s.sheetHdr}>
-              <Text style={s.sheetTitle}>Заметка дня</Text>
-              <TouchableOpacity onPress={() => setEditNote(false)}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity>
-            </View>
-            <TextInput style={[s.input, s.textArea, { margin: 16 }]} value={noteTxt} onChangeText={setNoteTxt} placeholder="Мысли, молитвы..." placeholderTextColor={C.textMuted} multiline textAlignVertical="top" />
-            <TouchableOpacity style={s.saveBtn} onPress={saveNote}><Text style={s.saveBtnTxt}>Сохранить</Text></TouchableOpacity>
+      <Modal visible={editNote} animationType="slide">
+        <SafeAreaView style={s.modal}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+          <View style={s.modalHdr}>
+            <TouchableOpacity onPress={() => setEditNote(false)}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity>
+            <Text style={s.modalTitle}>Заметка — {fmtDateRu(selDate)}</Text>
+            <TouchableOpacity onPress={saveNoteBlocks}><Text style={s.saveTxt}>Сохранить</Text></TouchableOpacity>
           </View>
-        </View>
+          <ScrollView ref={noteScrollRef} style={s.modalBody} keyboardShouldPersistTaps="handled" scrollEventThrottle={16}>
+            {noteBlocks.map((b, i) => <View key={b.id} onLayout={(e) => { noteBlockPos.current[b.id] = e.nativeEvent.layout.y; }}>
+              {b.type === 'divider' ? <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 8, gap: 8 }}><View style={{ flex: 1, height: 1, backgroundColor: C.border }} /><TouchableOpacity onPress={() => removeNoteBlock(b.id)}><Ionicons name="close" size={16} color={C.error} /></TouchableOpacity></View>
+              : <View style={b.textStyle?.highlight ? { backgroundColor: TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight)?.bg, borderRadius: 8, marginBottom: 4 } : undefined}>
+                <TextInput style={[s.input, s.textArea, noteActiveId === b.id && s.inputAct, b.textStyle?.fontSize && { fontSize: getFSize(b.textStyle.fontSize) }, b.textStyle?.bold && { fontWeight: 'bold' }, b.textStyle?.italic && { fontStyle: 'italic' }, b.textStyle?.highlight && { backgroundColor: 'transparent' }]} value={b.content} onChangeText={t => updateNoteBlock(b.id, t)} onFocus={() => { setNoteActiveId(b.id); setNoteTStyle(b.textStyle || {}); setTimeout(() => { const y = noteBlockPos.current[b.id]; if (y !== undefined && noteScrollRef.current) { noteScrollRef.current.scrollTo({ y: Math.max(0, y - 100), animated: true }); } }, 150); }} placeholder={i === 0 ? "Мысли, молитвы..." : "Продолжайте..."} placeholderTextColor={C.textMuted} multiline textAlignVertical="top" />
+              </View>}
+            </View>)}
+            <TouchableOpacity style={s.insertBtn} onPress={addNoteTextBlock}>
+              <Ionicons name="add-circle" size={18} color={C.primary} /><Text style={s.insertTxt}>Добавить блок</Text>
+            </TouchableOpacity>
+            <View style={{ height: 200 }} />
+          </ScrollView>
+          {noteActiveId && noteKbVisible && <RTToolbar style={noteTStyle} onToggle={toggleNoteStyle} onSize={setNoteFontSize} onHighlight={setNoteHighlight} onDivider={addNoteDivider} />}
+        </KeyboardAvoidingView></SafeAreaView>
       </Modal>
 
       <Modal visible={showPlanGen} animationType="slide" transparent>
