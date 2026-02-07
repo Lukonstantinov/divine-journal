@@ -1261,9 +1261,9 @@ Use this to track progress across sessions:
 - [x] **Phase 5**: Theme system (light/dark/sepia)
 - [x] **Phase 5**: Font scaling
 - [ ] **Phase 6A**: Rich text in daily notes
-- [ ] **Phase 6B**: Text highlighting in text blocks
-- [ ] **Phase 6C**: Toolbar enhancements (highlight, divider)
-- [ ] **Phase 6D**: Block reordering
+- [x] **Phase 6B**: Text highlighting in text blocks
+- [x] **Phase 6C**: Toolbar enhancements (highlight, divider)
+- [x] **Phase 6D**: Block reordering
 - [ ] **Phase 7**: Graph view
 - [ ] **A1**: Export/import data
 - [ ] **A2**: Voice-to-text (evaluate keyboard built-in vs custom)

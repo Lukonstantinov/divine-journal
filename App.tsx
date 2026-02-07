@@ -68,8 +68,14 @@ type Tab = 'journal' | 'bible' | 'calendar' | 'search' | 'settings';
 
 interface VerseHighlight { start: number; end: number; bold?: boolean; italic?: boolean; underline?: boolean; color?: string; }
 interface VerseData { book: string; chapter: number; verse: number; verseEnd?: number; text: string; fontFamily?: string; highlights?: VerseHighlight[]; }
-interface TStyle { bold?: boolean; italic?: boolean; underline?: boolean; fontSize?: string; }
-interface Block { id: string; type: 'text' | 'verse'; content: string; boxColor?: string; textStyle?: TStyle; }
+interface TStyle { bold?: boolean; italic?: boolean; underline?: boolean; fontSize?: string; highlight?: string; }
+interface Block { id: string; type: 'text' | 'verse' | 'divider'; content: string; boxColor?: string; textStyle?: TStyle; }
+
+const TEXT_HIGHLIGHTS = [
+  { id: 'yellow', bg: '#FFF9C4', label: 'Жёлтый' }, { id: 'green', bg: '#C8E6C9', label: 'Зелёный' },
+  { id: 'blue', bg: '#BBDEFB', label: 'Голубой' }, { id: 'pink', bg: '#F8BBD0', label: 'Розовый' },
+  { id: 'orange', bg: '#FFE0B2', label: 'Оранжевый' },
+];
 interface Entry { id: number; title: string; content: string; category: Cat; created_at: string; linked_verses: string; folder_id: number | null; }
 interface Reading { id: number; date: string; book: string; chapter: number; completed: boolean; }
 interface Fasting { id: number; start_date: string; end_date: string | null; notes: string; }
@@ -254,8 +260,9 @@ export default function App() {
 }
 
 // Rich Text Toolbar
-const RTToolbar = ({ style, onToggle, onSize }: { style: TStyle; onToggle: (k: keyof TStyle) => void; onSize: (id: string) => void }) => {
+const RTToolbar = ({ style, onToggle, onSize, onHighlight, onDivider }: { style: TStyle; onToggle: (k: keyof TStyle) => void; onSize: (id: string) => void; onHighlight: (color: string | null) => void; onDivider: () => void }) => {
   const [showSize, setShowSize] = useState(false);
+  const [showHl, setShowHl] = useState(false);
   return (
     <View style={s.toolbar}>
       {[['bold','B','bold'],['italic','I','italic'],['underline','U','underline']].map(([k,t,st]) => (
@@ -264,14 +271,29 @@ const RTToolbar = ({ style, onToggle, onSize }: { style: TStyle; onToggle: (k: k
         </TouchableOpacity>
       ))}
       <View style={s.toolDiv} />
-      <TouchableOpacity style={s.toolBtn} onPress={() => setShowSize(!showSize)}>
+      <TouchableOpacity style={s.toolBtn} onPress={() => { setShowSize(!showSize); setShowHl(false); }}>
         <Text style={s.toolTxt}>Aa</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={[s.toolBtn, style.highlight ? { backgroundColor: TEXT_HIGHLIGHTS.find(h => h.id === style.highlight)?.bg } : undefined]} onPress={() => { setShowHl(!showHl); setShowSize(false); }}>
+        <Ionicons name="color-fill" size={18} color={style.highlight ? C.text : C.textSec} />
+      </TouchableOpacity>
+      <View style={s.toolDiv} />
+      <TouchableOpacity style={s.toolBtn} onPress={onDivider}>
+        <Ionicons name="remove" size={18} color={C.textSec} />
       </TouchableOpacity>
       {showSize && <View style={s.dropdown}>{FONT_SIZES.map(f => (
         <TouchableOpacity key={f.id} style={s.dropItem} onPress={() => { onSize(f.id); setShowSize(false); }}>
           <Text style={{ fontSize: f.sz - 4 }}>{f.sz}px</Text>
         </TouchableOpacity>
       ))}</View>}
+      {showHl && <View style={[s.dropdown, { right: 50, flexDirection: 'row', flexWrap: 'wrap', gap: 6, padding: 10, minWidth: 160 }]}>
+        <TouchableOpacity style={{ padding: 6 }} onPress={() => { onHighlight(null); setShowHl(false); }}>
+          <Ionicons name="close-circle" size={22} color={C.textMuted} />
+        </TouchableOpacity>
+        {TEXT_HIGHLIGHTS.map(h => (
+          <TouchableOpacity key={h.id} style={[{ width: 30, height: 30, borderRadius: 15, backgroundColor: h.bg, justifyContent: 'center', alignItems: 'center' }, style.highlight === h.id && { borderWidth: 2, borderColor: C.primary }]} onPress={() => { onHighlight(h.id); setShowHl(false); }} />
+        ))}
+      </View>}
     </View>
   );
 };
@@ -496,6 +518,9 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
   const updateBlock = (id: string, txt: string) => setBlocks(bs => bs.map(b => b.id === id ? { ...b, content: txt, textStyle: tStyle } : b));
   const toggleStyle = (k: keyof TStyle) => { const nv = !tStyle[k]; setTStyle(p => ({ ...p, [k]: nv })); if (activeId) setBlocks(bs => bs.map(b => b.id === activeId ? { ...b, textStyle: { ...b.textStyle, [k]: nv } } : b)); };
   const setFontSize = (sz: string) => { setTStyle(p => ({ ...p, fontSize: sz })); if (activeId) setBlocks(bs => bs.map(b => b.id === activeId ? { ...b, textStyle: { ...b.textStyle, fontSize: sz } } : b)); };
+  const setHighlight = (color: string | null) => { setTStyle(p => ({ ...p, highlight: color || undefined })); if (activeId) setBlocks(bs => bs.map(b => b.id === activeId ? { ...b, textStyle: { ...b.textStyle, highlight: color || undefined } } : b)); };
+  const addDivider = () => { const div: Block = { id: genId(), type: 'divider', content: '' }; if (activeId) { setBlocks(bs => { const i = bs.findIndex(b => b.id === activeId); const n = [...bs]; n.splice(i + 1, 0, div); return n; }); } else { setBlocks(bs => [...bs, div]); } };
+  const moveBlock = (idx: number, dir: -1 | 1) => setBlocks(bs => { const n = [...bs]; const t = idx + dir; if (t < 0 || t >= n.length) return bs; [n[idx], n[t]] = [n[t], n[idx]]; return n; });
 
   const addVerses = (vs: BibleVerse[], col: string = 'gold') => {
     const sorted = [...vs].sort((a, b) => a.book.localeCompare(b.book) || a.chapter - b.chapter || a.verse - b.verse);
@@ -617,10 +642,10 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
             <Text style={s.label}>Заголовок</Text>
             <TextInput style={s.input} value={title} onChangeText={setTitle} placeholder="Название..." placeholderTextColor={C.textMuted} />
             <Text style={s.label}>Содержание</Text>
-            {blocks.map((b, i) => <View key={b.id} onLayout={(e) => { blockPositions.current[b.id] = e.nativeEvent.layout.y; }}>{b.type === 'text' ? <View><TextInput style={[s.input, s.textArea, activeId === b.id && s.inputAct, b.textStyle?.fontSize && { fontSize: getFSize(b.textStyle.fontSize) }, b.textStyle?.bold && { fontWeight: 'bold' }, b.textStyle?.italic && { fontStyle: 'italic' }]} value={b.content} onChangeText={t => updateBlock(b.id, t)} onFocus={() => { setActiveId(b.id); setTStyle(b.textStyle || {}); setTimeout(() => { const y = blockPositions.current[b.id]; if (y !== undefined && scrollRef.current) { scrollRef.current.scrollTo({ y: Math.max(0, y - 100), animated: true }); } }, 150); }} placeholder={i === 0 ? "Начните писать..." : "Продолжайте..."} placeholderTextColor={C.textMuted} multiline textAlignVertical="top" /><TouchableOpacity style={s.insertBtn} onPress={() => { setInsertId(b.id); setVpick(true); }}><Ionicons name="add-circle" size={18} color={C.primary} /><Text style={s.insertTxt}>Вставить стихи</Text></TouchableOpacity></View> : <View style={[s.verseEdit, { backgroundColor: getVColor(b.boxColor).bg, borderLeftColor: getVColor(b.boxColor).border }]}>{(() => { try { const d = JSON.parse(b.content) as VerseData; const font = getVFont(d.fontFamily); const ref = d.verseEnd ? `${d.book} ${d.chapter}:${d.verse}-${d.verseEnd}` : `${d.book} ${d.chapter}:${d.verse}`; return <><View style={s.verseEditHdr}><View style={s.verseEditLeft}><Ionicons name="book" size={16} color={getVColor(b.boxColor).border} /><Text style={[s.verseRef, { color: getVColor(b.boxColor).border }]}>{ref}</Text>{d.fontFamily && <Text style={s.verseFontLabel}>{font.name}</Text>}</View><View style={s.verseEditActs}><TouchableOpacity onPress={() => openVerseFormat(b.id)}><Ionicons name="text" size={20} color={getVColor(b.boxColor).border} /></TouchableOpacity><TouchableOpacity onPress={() => setColorPick(b.id)}><Ionicons name="color-palette" size={20} color={getVColor(b.boxColor).border} /></TouchableOpacity><TouchableOpacity onPress={() => removeBlock(b.id)}><Ionicons name="close-circle" size={22} color={C.error} /></TouchableOpacity></View></View><HighlightedVerseText text={d.text} highlights={d.highlights} fontFamily={font.family} baseStyle={s.verseEditTxt} /></>; } catch { return null; } })()}</View>}</View>)}
+            {blocks.map((b, i) => <View key={b.id} onLayout={(e) => { blockPositions.current[b.id] = e.nativeEvent.layout.y; }}>{b.type === 'divider' ? <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 8, gap: 8 }}><View style={{ flex: 1, height: 1, backgroundColor: C.border }} /><View style={{ flexDirection: 'row', gap: 4 }}>{i > 0 && <TouchableOpacity onPress={() => moveBlock(i, -1)}><Ionicons name="arrow-up" size={16} color={C.textMuted} /></TouchableOpacity>}{i < blocks.length - 1 && <TouchableOpacity onPress={() => moveBlock(i, 1)}><Ionicons name="arrow-down" size={16} color={C.textMuted} /></TouchableOpacity>}<TouchableOpacity onPress={() => removeBlock(b.id)}><Ionicons name="close" size={16} color={C.error} /></TouchableOpacity></View></View> : b.type === 'text' ? <View style={b.textStyle?.highlight ? { backgroundColor: TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight)?.bg, borderRadius: 8, marginBottom: 4 } : undefined}><View style={{ flexDirection: 'row', alignItems: 'center' }}><View style={{ flex: 1 }}><TextInput style={[s.input, s.textArea, activeId === b.id && s.inputAct, b.textStyle?.fontSize && { fontSize: getFSize(b.textStyle.fontSize) }, b.textStyle?.bold && { fontWeight: 'bold' }, b.textStyle?.italic && { fontStyle: 'italic' }, b.textStyle?.highlight && { backgroundColor: 'transparent' }]} value={b.content} onChangeText={t => updateBlock(b.id, t)} onFocus={() => { setActiveId(b.id); setTStyle(b.textStyle || {}); setTimeout(() => { const y = blockPositions.current[b.id]; if (y !== undefined && scrollRef.current) { scrollRef.current.scrollTo({ y: Math.max(0, y - 100), animated: true }); } }, 150); }} placeholder={i === 0 ? "Начните писать..." : "Продолжайте..."} placeholderTextColor={C.textMuted} multiline textAlignVertical="top" /></View>{blocks.length > 1 && <View style={{ paddingLeft: 4, gap: 2 }}>{i > 0 && <TouchableOpacity onPress={() => moveBlock(i, -1)}><Ionicons name="chevron-up" size={16} color={C.textMuted} /></TouchableOpacity>}{i < blocks.length - 1 && <TouchableOpacity onPress={() => moveBlock(i, 1)}><Ionicons name="chevron-down" size={16} color={C.textMuted} /></TouchableOpacity>}</View>}</View><TouchableOpacity style={s.insertBtn} onPress={() => { setInsertId(b.id); setVpick(true); }}><Ionicons name="add-circle" size={18} color={C.primary} /><Text style={s.insertTxt}>Вставить стихи</Text></TouchableOpacity></View> : <View style={[s.verseEdit, { backgroundColor: getVColor(b.boxColor).bg, borderLeftColor: getVColor(b.boxColor).border }]}>{(() => { try { const d = JSON.parse(b.content) as VerseData; const font = getVFont(d.fontFamily); const ref = d.verseEnd ? `${d.book} ${d.chapter}:${d.verse}-${d.verseEnd}` : `${d.book} ${d.chapter}:${d.verse}`; return <><View style={s.verseEditHdr}><View style={s.verseEditLeft}><Ionicons name="book" size={16} color={getVColor(b.boxColor).border} /><Text style={[s.verseRef, { color: getVColor(b.boxColor).border }]}>{ref}</Text>{d.fontFamily && <Text style={s.verseFontLabel}>{font.name}</Text>}</View><View style={s.verseEditActs}><TouchableOpacity onPress={() => openVerseFormat(b.id)}><Ionicons name="text" size={20} color={getVColor(b.boxColor).border} /></TouchableOpacity><TouchableOpacity onPress={() => setColorPick(b.id)}><Ionicons name="color-palette" size={20} color={getVColor(b.boxColor).border} /></TouchableOpacity><TouchableOpacity onPress={() => removeBlock(b.id)}><Ionicons name="close-circle" size={22} color={C.error} /></TouchableOpacity></View></View><HighlightedVerseText text={d.text} highlights={d.highlights} fontFamily={font.family} baseStyle={s.verseEditTxt} /></>; } catch { return null; } })()}</View>}</View>)}
             <View style={{ height: 200 }} />
           </ScrollView>
-          {activeId && keyboardVisible && <RTToolbar style={tStyle} onToggle={toggleStyle} onSize={setFontSize} />}
+          {activeId && keyboardVisible && <RTToolbar style={tStyle} onToggle={toggleStyle} onSize={setFontSize} onHighlight={setHighlight} onDivider={addDivider} />}
         </KeyboardAvoidingView></SafeAreaView>
       </Modal>
 
