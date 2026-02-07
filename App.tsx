@@ -5,6 +5,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { BIBLE_VERSES, BIBLE_BOOKS, BibleVerse, BibleBook } from './BibleVerses';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Text as SvgText, G } from 'react-native-svg';
+import { File as ExpoFile, Paths } from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import * as DocumentPicker from 'expo-document-picker';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -1643,6 +1646,80 @@ const SettingsScreen = () => {
   const maxMonth = Math.max(...byMonth.map(m => m.count), 1);
   const readPct = stats.totalR > 0 ? Math.round((stats.r / stats.totalR) * 100) : 0;
 
+  const exportData = async () => {
+    try {
+      const data = {
+        version: '3.2',
+        exportDate: new Date().toISOString(),
+        entries: await db.getAllAsync('SELECT * FROM entries'),
+        bookmarks: await db.getAllAsync('SELECT * FROM bookmarks'),
+        readingPlan: await db.getAllAsync('SELECT * FROM reading_plan'),
+        dailyNotes: await db.getAllAsync('SELECT * FROM daily_notes'),
+        fasting: await db.getAllAsync('SELECT * FROM fasting'),
+        folders: await db.getAllAsync('SELECT * FROM folders'),
+        dailyVerseHistory: await db.getAllAsync('SELECT * FROM daily_verse_history'),
+        appSettings: await db.getAllAsync('SELECT * FROM app_settings'),
+      };
+      const json = JSON.stringify(data, null, 2);
+      const file = new ExpoFile(Paths.cache, 'divine_journal_backup.json');
+      file.write(json);
+      await Sharing.shareAsync(file.uri, { mimeType: 'application/json', dialogTitle: 'Экспорт данных' });
+    } catch (e) { Alert.alert('Ошибка', 'Не удалось экспортировать данные'); }
+  };
+
+  const importData = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: 'application/json' });
+      if (result.canceled || !result.assets?.[0]) return;
+      const uri = result.assets[0].uri;
+      const importFile = new ExpoFile(uri);
+      const json = await importFile.text();
+      const data = JSON.parse(json);
+      if (!data.version || !data.entries) { Alert.alert('Ошибка', 'Неверный формат файла'); return; }
+
+      Alert.alert('Импорт данных', `Найдено: ${data.entries?.length || 0} записей, ${data.bookmarks?.length || 0} закладок, ${data.folders?.length || 0} папок.\n\nЭто заменит текущие данные.`, [
+        { text: 'Отмена', style: 'cancel' },
+        { text: 'Импортировать', style: 'destructive', onPress: async () => {
+          try {
+            // Clear existing data
+            await db.execAsync('DELETE FROM entries; DELETE FROM bookmarks; DELETE FROM reading_plan; DELETE FROM daily_notes; DELETE FROM fasting; DELETE FROM folders; DELETE FROM daily_verse_history;');
+
+            // Import entries
+            for (const e of (data.entries || [])) {
+              await db.runAsync('INSERT INTO entries (id, title, content, category, created_at, linked_verses, folder_id) VALUES (?,?,?,?,?,?,?)',
+                [e.id, e.title, e.content, e.category, e.created_at, e.linked_verses, e.folder_id || null]);
+            }
+            // Import bookmarks
+            for (const b of (data.bookmarks || [])) {
+              await db.runAsync('INSERT OR IGNORE INTO bookmarks (id, verse_id, created_at) VALUES (?,?,?)', [b.id, b.verse_id, b.created_at]);
+            }
+            // Import reading plan
+            for (const r of (data.readingPlan || [])) {
+              await db.runAsync('INSERT OR REPLACE INTO reading_plan (id, date, book, chapter, completed) VALUES (?,?,?,?,?)', [r.id, r.date, r.book, r.chapter, r.completed]);
+            }
+            // Import daily notes
+            for (const n of (data.dailyNotes || [])) {
+              await db.runAsync('INSERT OR REPLACE INTO daily_notes (id, date, notes) VALUES (?,?,?)', [n.id, n.date, n.notes]);
+            }
+            // Import fasting
+            for (const f of (data.fasting || [])) {
+              await db.runAsync('INSERT INTO fasting (id, start_date, end_date, notes, created_at) VALUES (?,?,?,?,?)', [f.id, f.start_date, f.end_date, f.notes, f.created_at]);
+            }
+            // Import folders
+            for (const f of (data.folders || [])) {
+              await db.runAsync('INSERT INTO folders (id, name, color, icon, sort_order) VALUES (?,?,?,?,?)', [f.id, f.name, f.color, f.icon, f.sort_order]);
+            }
+            // Import daily verse history
+            for (const v of (data.dailyVerseHistory || [])) {
+              await db.runAsync('INSERT OR IGNORE INTO daily_verse_history (id, date, verse_id, seen) VALUES (?,?,?,?)', [v.id, v.date, v.verse_id, v.seen]);
+            }
+            Alert.alert('Готово', 'Данные успешно импортированы. Перезапустите приложение.');
+          } catch (e) { Alert.alert('Ошибка', 'Не удалось импортировать данные'); }
+        }},
+      ]);
+    } catch (e) { Alert.alert('Ошибка', 'Не удалось прочитать файл'); }
+  };
+
   return (
     <View style={[s.screen, { paddingBottom: 80 }]}><View style={s.header}><Text style={s.headerTxt}>⚙️ Настройки</Text></View>
       <ScrollView style={s.settingsContent}>
@@ -1728,6 +1805,23 @@ const SettingsScreen = () => {
             <Ionicons name="chevron-forward" size={20} color={C.textMuted} />
           </TouchableOpacity>
         </View>}
+
+        <View style={s.section}><Text style={s.secTitle}>ДАННЫЕ</Text>
+          <TouchableOpacity style={[s.sheetItem, { borderRadius: 12, backgroundColor: C.surface, marginBottom: 8 }]} onPress={exportData}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Ionicons name="cloud-upload" size={22} color={C.success} />
+              <View><Text style={{ fontSize: 15, fontWeight: '500', color: C.text }}>Экспорт данных</Text><Text style={{ fontSize: 12, color: C.textMuted }}>Сохранить резервную копию</Text></View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={C.textMuted} />
+          </TouchableOpacity>
+          <TouchableOpacity style={[s.sheetItem, { borderRadius: 12, backgroundColor: C.surface }]} onPress={importData}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Ionicons name="cloud-download" size={22} color={C.primary} />
+              <View><Text style={{ fontSize: 15, fontWeight: '500', color: C.text }}>Импорт данных</Text><Text style={{ fontSize: 12, color: C.textMuted }}>Восстановить из резервной копии</Text></View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={C.textMuted} />
+          </TouchableOpacity>
+        </View>
 
         <View style={s.section}><Text style={s.secTitle}>О ПРИЛОЖЕНИИ</Text><View style={s.aboutCard}><Ionicons name="book" size={40} color={C.primary} /><Text style={s.appName}>Divine Journal</Text><Text style={s.appVer}>Версия 3.2</Text><Text style={s.appDesc}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
       </ScrollView>
