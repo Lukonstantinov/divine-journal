@@ -4,6 +4,7 @@ import * as SQLite from 'expo-sqlite';
 import { Ionicons } from '@expo/vector-icons';
 import { BIBLE_VERSES, BIBLE_BOOKS, BibleVerse, BibleBook } from './BibleVerses';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Circle, Line, Text as SvgText, G } from 'react-native-svg';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -1379,12 +1380,217 @@ const SearchScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: numb
   );
 };
 
+// Graph View
+interface GraphNode { id: string; type: 'entry' | 'verse' | 'folder'; label: string; color: string; x: number; y: number; radius: number; }
+interface GraphEdge { from: string; to: string; strength: number; }
+
+const STOPWORDS_RU = new Set(['и','в','на','о','с','к','по','за','из','не','что','как','это','для','но','от','при','его','она','они','мы','то','бы','было','был','быть','все','так','же','уже','ещё','ни','мне','мой','моя','моё','тот','эта','это']);
+const extractKeywords = (title: string) => title.toLowerCase().replace(/[^\wа-яёА-ЯЁ\s]/g, '').split(/\s+/).filter(w => w.length > 3 && !STOPWORDS_RU.has(w));
+
+const computeGraph = (entries: Entry[], folders: Folder[]): { nodes: GraphNode[]; edges: GraphEdge[] } => {
+  const nodes: GraphNode[] = [];
+  const edges: GraphEdge[] = [];
+  const nodeMap = new Map<string, GraphNode>();
+  const catColors: Record<string, string> = { сон: '#4A7C59', откровение: '#B8860B', мысль: '#8B4513', молитва: '#7B4B94' };
+
+  // Entry nodes
+  entries.slice(0, 40).forEach(e => {
+    const id = `e${e.id}`;
+    const node: GraphNode = { id, type: 'entry', label: e.title.substring(0, 20), color: catColors[e.category] || '#8B4513', x: 0, y: 0, radius: 10 };
+    nodes.push(node);
+    nodeMap.set(id, node);
+  });
+
+  // Folder nodes
+  folders.forEach(f => {
+    const id = `f${f.id}`;
+    const node: GraphNode = { id, type: 'folder', label: f.name.substring(0, 15), color: f.color, x: 0, y: 0, radius: 14 };
+    nodes.push(node);
+    nodeMap.set(id, node);
+  });
+
+  // Connections: same category
+  const byCategory = new Map<string, string[]>();
+  entries.slice(0, 40).forEach(e => {
+    const id = `e${e.id}`;
+    const arr = byCategory.get(e.category) || [];
+    arr.push(id);
+    byCategory.set(e.category, arr);
+  });
+  byCategory.forEach(ids => {
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < Math.min(ids.length, i + 4); j++) {
+        edges.push({ from: ids[i], to: ids[j], strength: 0.3 });
+      }
+    }
+  });
+
+  // Connections: shared verses
+  const verseMap = new Map<string, string[]>();
+  entries.slice(0, 40).forEach(e => {
+    const id = `e${e.id}`;
+    try {
+      const linked = JSON.parse(e.linked_verses || '[]');
+      linked.forEach((v: any) => {
+        const vKey = `${v.book}-${v.chapter}-${v.verse}`;
+        const arr = verseMap.get(vKey) || [];
+        arr.push(id);
+        verseMap.set(vKey, arr);
+      });
+    } catch {}
+  });
+  verseMap.forEach(ids => {
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        edges.push({ from: ids[i], to: ids[j], strength: 0.7 });
+      }
+    }
+  });
+
+  // Connections: same folder
+  entries.slice(0, 40).forEach(e => {
+    if (e.folder_id) {
+      edges.push({ from: `e${e.id}`, to: `f${e.folder_id}`, strength: 0.5 });
+    }
+  });
+
+  // Connections: keyword overlap
+  const kwMap = new Map<string, string[]>();
+  entries.slice(0, 40).forEach(e => {
+    const kws = extractKeywords(e.title);
+    kws.forEach(kw => {
+      const arr = kwMap.get(kw) || [];
+      arr.push(`e${e.id}`);
+      kwMap.set(kw, arr);
+    });
+  });
+  kwMap.forEach(ids => {
+    if (ids.length > 1 && ids.length < 8) {
+      for (let i = 0; i < ids.length; i++) {
+        for (let j = i + 1; j < ids.length; j++) {
+          edges.push({ from: ids[i], to: ids[j], strength: 0.4 });
+        }
+      }
+    }
+  });
+
+  // Deduplicate edges
+  const edgeSet = new Map<string, GraphEdge>();
+  edges.forEach(e => {
+    const key = [e.from, e.to].sort().join('-');
+    const existing = edgeSet.get(key);
+    if (existing) { existing.strength = Math.min(1, existing.strength + e.strength * 0.5); }
+    else { edgeSet.set(key, { ...e }); }
+  });
+
+  // Force-directed layout
+  const w = SW - 40, h = 400;
+  nodes.forEach(n => { n.x = 20 + Math.random() * w; n.y = 20 + Math.random() * (h - 40); });
+
+  const finalEdges = Array.from(edgeSet.values());
+  for (let iter = 0; iter < 60; iter++) {
+    // Repulsion
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const dx = nodes[j].x - nodes[i].x;
+        const dy = nodes[j].y - nodes[i].y;
+        const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
+        const force = 600 / (dist * dist);
+        nodes[i].x -= (dx / dist) * force;
+        nodes[i].y -= (dy / dist) * force;
+        nodes[j].x += (dx / dist) * force;
+        nodes[j].y += (dy / dist) * force;
+      }
+    }
+    // Attraction
+    finalEdges.forEach(e => {
+      const a = nodeMap.get(e.from);
+      const b = nodeMap.get(e.to);
+      if (!a || !b) return;
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
+      const force = dist * 0.008 * e.strength;
+      a.x += (dx / dist) * force;
+      a.y += (dy / dist) * force;
+      b.x -= (dx / dist) * force;
+      b.y -= (dy / dist) * force;
+    });
+    // Bounds
+    nodes.forEach(n => {
+      n.x = Math.max(20, Math.min(w, n.x));
+      n.y = Math.max(20, Math.min(h - 20, n.y));
+    });
+  }
+
+  return { nodes, edges: finalEdges };
+};
+
+const GraphView = ({ entries, folders, onClose }: { entries: Entry[]; folders: Folder[]; onClose: () => void }) => {
+  const [selected, setSelected] = useState<GraphNode | null>(null);
+  const graph = useMemo(() => computeGraph(entries, folders), [entries, folders]);
+
+  const typeLabel: Record<string, string> = { entry: 'Запись', verse: 'Стих', folder: 'Папка' };
+
+  return (
+    <Modal visible animationType="slide"><SafeAreaView style={s.modal}>
+      <View style={s.modalHdr}>
+        <TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity>
+        <Text style={s.modalTitle}>Граф связей</Text>
+        <View style={{ width: 24 }} />
+      </View>
+      <ScrollView>
+        <View style={{ padding: 16 }}>
+          <View style={{ flexDirection: 'row', gap: 16, marginBottom: 12, flexWrap: 'wrap' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}><View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#8B4513' }} /><Text style={{ fontSize: 11, color: C.textMuted }}>Мысль</Text></View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}><View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#B8860B' }} /><Text style={{ fontSize: 11, color: C.textMuted }}>Откров.</Text></View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}><View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#4A7C59' }} /><Text style={{ fontSize: 11, color: C.textMuted }}>Сон</Text></View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}><View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#7B4B94' }} /><Text style={{ fontSize: 11, color: C.textMuted }}>Молитва</Text></View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}><View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: C.accent, borderWidth: 1, borderColor: C.border }} /><Text style={{ fontSize: 11, color: C.textMuted }}>Папка</Text></View>
+          </View>
+          <View style={{ backgroundColor: C.surface, borderRadius: 16, overflow: 'hidden' }}>
+            <Svg width={SW - 32} height={400}>
+              {graph.edges.map((e, i) => {
+                const a = graph.nodes.find(n => n.id === e.from);
+                const b = graph.nodes.find(n => n.id === e.to);
+                if (!a || !b) return null;
+                return <Line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={C.border} strokeWidth={Math.max(e.strength * 2.5, 0.5)} strokeOpacity={0.5} />;
+              })}
+              {graph.nodes.map(n => (
+                <G key={n.id} onPress={() => setSelected(n)}>
+                  <Circle cx={n.x} cy={n.y} r={n.radius} fill={n.color} opacity={selected && selected.id !== n.id ? 0.4 : 0.9} stroke={selected?.id === n.id ? C.text : 'transparent'} strokeWidth={2} />
+                  <SvgText x={n.x} y={n.y + n.radius + 12} textAnchor="middle" fontSize={9} fill={C.textMuted}>{n.label}</SvgText>
+                </G>
+              ))}
+            </Svg>
+          </View>
+          {selected && (
+            <View style={{ backgroundColor: C.surface, borderRadius: 12, padding: 16, marginTop: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: selected.color }} />
+                <Text style={{ fontSize: 16, fontWeight: '600', color: C.text }}>{selected.label}</Text>
+                <Text style={{ fontSize: 12, color: C.textMuted }}>({typeLabel[selected.type]})</Text>
+              </View>
+              <Text style={{ fontSize: 13, color: C.textSec }}>Связей: {graph.edges.filter(e => e.from === selected.id || e.to === selected.id).length}</Text>
+            </View>
+          )}
+          <View style={{ marginTop: 16, padding: 12, backgroundColor: C.surfaceAlt, borderRadius: 12 }}>
+            <Text style={{ fontSize: 13, color: C.textSec, textAlign: 'center' }}>{graph.nodes.length} узлов • {graph.edges.length} связей</Text>
+          </View>
+        </View>
+      </ScrollView>
+    </SafeAreaView></Modal>
+  );
+};
+
 // Settings Screen
 const SettingsScreen = () => {
   const { theme, themeId, setThemeId, fontScale, setFontScale } = useTheme();
   const [stats, setStats] = useState({ e: 0, b: 0, r: 0, totalR: 0, streak: 0, fastDays: 0 });
   const [byCat, setByCat] = useState<Record<Cat, number>>({ сон: 0, откровение: 0, мысль: 0, молитва: 0 });
   const [byMonth, setByMonth] = useState<{ month: string; label: string; count: number }[]>([]);
+  const [showGraph, setShowGraph] = useState(false);
+  const [allEntries, setAllEntries] = useState<Entry[]>([]);
+  const [allFolders, setAllFolders] = useState<Folder[]>([]);
 
   useEffect(() => { (async () => {
     const e = await db.getFirstAsync<{ c: number }>('SELECT COUNT(*) as c FROM entries');
@@ -1426,6 +1632,10 @@ const SettingsScreen = () => {
     });
 
     setStats({ e: e?.c || 0, b: b?.c || 0, r: r?.c || 0, totalR: totalR?.c || 0, streak, fastDays });
+
+    // Load for graph
+    setAllEntries(await db.getAllAsync<Entry>('SELECT * FROM entries ORDER BY created_at DESC'));
+    setAllFolders(await db.getAllAsync<Folder>('SELECT * FROM folders ORDER BY sort_order ASC'));
   })(); }, []);
 
   const totalEntries = Math.max(stats.e, 1);
@@ -1509,8 +1719,19 @@ const SettingsScreen = () => {
           <Text style={{ fontSize: Math.round(14 * fontScale), color: C.textSec, marginTop: 10, fontStyle: 'italic' }}>Образец текста</Text>
         </View>
 
+        {stats.e > 0 && <View style={s.section}><Text style={s.secTitle}>ИНСТРУМЕНТЫ</Text>
+          <TouchableOpacity style={[s.sheetItem, { borderRadius: 12, backgroundColor: C.surface }]} onPress={() => setShowGraph(true)}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Ionicons name="git-network" size={22} color={C.primary} />
+              <View><Text style={{ fontSize: 15, fontWeight: '500', color: C.text }}>Граф связей</Text><Text style={{ fontSize: 12, color: C.textMuted }}>Визуализация связей между записями</Text></View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={C.textMuted} />
+          </TouchableOpacity>
+        </View>}
+
         <View style={s.section}><Text style={s.secTitle}>О ПРИЛОЖЕНИИ</Text><View style={s.aboutCard}><Ionicons name="book" size={40} color={C.primary} /><Text style={s.appName}>Divine Journal</Text><Text style={s.appVer}>Версия 3.2</Text><Text style={s.appDesc}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
       </ScrollView>
+      {showGraph && <GraphView entries={allEntries} folders={allFolders} onClose={() => setShowGraph(false)} />}
     </View>
   );
 };
