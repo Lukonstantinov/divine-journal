@@ -152,11 +152,12 @@ const catIcon = (c: Cat) => ({ сон: 'moon', откровение: 'flash', м
 // SafeArea Wrapper Component
 const SafeAreaWrapper = ({ children }: { children: React.ReactNode }) => {
   const insets = useSafeAreaInsets();
-  
+  const statusBarHeight = StatusBar.currentHeight || 0;
+  const topPad = Math.max(insets.top, statusBarHeight);
+
   return (
-    <SafeAreaView style={[s.container, { 
-      paddingTop: insets.top,
-      paddingBottom: insets.bottom > 0 ? insets.bottom : Platform.OS === 'android' ? 16 : 4 
+    <SafeAreaView style={[s.container, {
+      paddingTop: topPad,
     }]}>
       {children}
     </SafeAreaView>
@@ -1562,7 +1563,7 @@ const GraphView = ({ entries, folders, onClose }: { entries: Entry[]; folders: F
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}><View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#7B4B94' }} /><Text style={{ fontSize: 11, color: C.textMuted }}>Молитва</Text></View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}><View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: C.accent, borderWidth: 1, borderColor: C.border }} /><Text style={{ fontSize: 11, color: C.textMuted }}>Папка</Text></View>
           </View>
-          <View style={{ backgroundColor: C.surface, borderRadius: 16, overflow: 'hidden' }}>
+          <View style={{ backgroundColor: C.surface, borderRadius: 16, overflow: 'hidden', position: 'relative' }}>
             <Svg width={SW - 32} height={400}>
               {graph.edges.map((e, i) => {
                 const a = graph.nodes.find(n => n.id === e.from);
@@ -1571,21 +1572,37 @@ const GraphView = ({ entries, folders, onClose }: { entries: Entry[]; folders: F
                 return <Line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={C.border} strokeWidth={Math.max(e.strength * 2.5, 0.5)} strokeOpacity={0.5} />;
               })}
               {graph.nodes.map(n => (
-                <G key={n.id} onPress={() => setSelected(n)}>
+                <G key={n.id}>
                   <Circle cx={n.x} cy={n.y} r={n.radius} fill={n.color} opacity={selected && selected.id !== n.id ? 0.4 : 0.9} stroke={selected?.id === n.id ? C.text : 'transparent'} strokeWidth={2} />
                   <SvgText x={n.x} y={n.y + n.radius + 12} textAnchor="middle" fontSize={9} fill={C.textMuted}>{n.label}</SvgText>
                 </G>
               ))}
             </Svg>
+            {graph.nodes.map(n => (
+              <TouchableOpacity key={`touch-${n.id}`} style={{ position: 'absolute', left: n.x - n.radius - 4, top: n.y - n.radius - 4, width: (n.radius + 4) * 2, height: (n.radius + 4) * 2, borderRadius: n.radius + 4 }} onPress={() => setSelected(selected?.id === n.id ? null : n)} activeOpacity={0.7} />
+            ))}
           </View>
           {selected && (
             <View style={{ backgroundColor: C.surface, borderRadius: 12, padding: 16, marginTop: 12 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                 <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: selected.color }} />
-                <Text style={{ fontSize: 16, fontWeight: '600', color: C.text }}>{selected.label}</Text>
+                <Text style={{ fontSize: 16, fontWeight: '600', color: C.text, flex: 1 }}>{selected.label}</Text>
                 <Text style={{ fontSize: 12, color: C.textMuted }}>({typeLabel[selected.type]})</Text>
               </View>
-              <Text style={{ fontSize: 13, color: C.textSec }}>Связей: {graph.edges.filter(e => e.from === selected.id || e.to === selected.id).length}</Text>
+              {(() => {
+                const connEdges = graph.edges.filter(e => e.from === selected.id || e.to === selected.id);
+                const connNodes = connEdges.map(e => graph.nodes.find(n => n.id === (e.from === selected.id ? e.to : e.from))).filter(Boolean);
+                return <>
+                  <Text style={{ fontSize: 13, color: C.textSec, marginBottom: connNodes.length > 0 ? 8 : 0 }}>Связей: {connEdges.length}</Text>
+                  {connNodes.map((cn, i) => cn && (
+                    <TouchableOpacity key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 }} onPress={() => setSelected(cn)}>
+                      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: cn.color }} />
+                      <Text style={{ fontSize: 13, color: C.primary }}>{cn.label}</Text>
+                      <Text style={{ fontSize: 11, color: C.textMuted }}>({typeLabel[cn.type]})</Text>
+                    </TouchableOpacity>
+                  ))}
+                </>;
+              })()}
             </View>
           )}
           <View style={{ marginTop: 16, padding: 12, backgroundColor: C.surfaceAlt, borderRadius: 12 }}>
