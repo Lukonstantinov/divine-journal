@@ -14,8 +14,11 @@
 
 | File | Lines | Purpose |
 |---|---|---|
-| `App.tsx` | ~1,119 | **Entire app** — all screens, components, styles, DB logic |
+| `App.tsx` | ~1,914 | **Entire app** — all screens, components, styles, DB logic |
+| `utils.ts` | ~75 | Pure utility functions extracted for testability |
 | `BibleVerses.ts` | ~31,182 | Static Bible data: `BIBLE_VERSES` array, `BIBLE_BOOKS` array |
+| `__tests__/utils.test.ts` | ~270 | 46 unit tests for utility functions |
+| `jest.config.js` | Config | Jest + ts-jest configuration |
 | `app.json` | Expo config | Package: `com.lukkonas.divinejournal`, portrait only |
 | `package.json` | Dependencies | Expo 54, React 19.1, RN 0.81.5, expo-sqlite 16 |
 | `eas.json` | EAS Build | Preview profile: Android APK |
@@ -23,45 +26,55 @@
 ### App.tsx Internal Structure (top to bottom)
 
 ```
-Lines 1-9       Imports (React, RN, expo-sqlite, Ionicons, BibleVerses, SafeArea)
-Lines 10-15     C = color constants object (primary #8B4513, bg #FDFBF7, etc.)
-Lines 17-34     VERSE_COLORS[], VERSE_FONTS[], HIGHLIGHT_COLORS[], FONT_SIZES[], MONTHS[], WDAYS[]
-Lines 36-46     TypeScript types: Cat, Tab, VerseHighlight, VerseData, Block, Entry, Reading, Fasting, NavTarget
-Lines 48-88     DB init (initDb), utility functions (genId, parseBlocks, getVColor, fmtDate, catStyle, catIcon)
-Lines 89-165    App shell: SafeAreaWrapper, AppContent (tab router), App export
-Lines 167-188   RTToolbar component (bold/italic/underline/font-size)
-Lines 190-287   HighlightedVerseText + VerseFormatModal components
-Lines 289-435   JournalScreen (~146 lines) — entries CRUD, block editor, verse embedding
-Lines 437-463   VersePickerModal — Bible verse selection with search
-Lines 465-968   CalendarScreen (~503 lines) — calendar, reading plans, fasting tracker
-Lines 971-1021  BibleScreen — testament filter, book/chapter/verse navigation, bookmarks
-Lines 1023-1043 SearchScreen — debounced Bible search
-Lines 1045-1057 SettingsScreen — basic stats (entries, bookmarks, readings)
-Lines 1059-1119 StyleSheet.create (s = {...}) — all styles in one object
+Lines 1-10       Imports (React, RN, expo-sqlite, Ionicons, BibleVerses, SafeArea, SVG, FileSystem, Sharing, DocumentPicker)
+Lines 14-42      THEMES object (light/dark/sepia palettes), ThemeContext, useTheme hook
+Lines 43-97      Constants: VERSE_COLORS, VERSE_FONTS, FONT_SIZES, TEXT_HIGHLIGHTS, MONTHS, WDAYS
+                 Types: TStyle, Block, Cat, Tab, Entry, Folder, Reading, Fasting, NavTarget
+Lines 98-147     initDb (8 tables + 1 migration), getDailyVerse, genId, parseBlocks, utility functions
+Lines 148-203    SafeAreaWrapper component
+Lines 204-241    ThemeProvider component (persistent theme/fontScale via app_settings table)
+Lines 242-266    App export: SafeAreaProvider → ThemeProvider → SafeAreaWrapper → AppContent (tab router)
+Lines 267-404    RTToolbar component (bold/italic/underline/font-size/highlight-picker/divider)
+Lines 405-751    JournalScreen — entries CRUD, block editor, verse embedding, folders, daily verse widget
+Lines 752-1311   CalendarScreen — calendar grid, daily notes (block editor), reading plans, fasting tracker
+Lines 1313-1363  BibleScreen — testament filter, book/chapter/verse navigation, bookmarks
+Lines 1365-1385  SearchScreen — debounced Bible search with navigation
+Lines 1386-1588  Graph types + computeGraph (force-directed layout) + GraphView component
+Lines 1589-1832  SettingsScreen — stats dashboard, themes, font scale, graph button, export/import, about
+Lines 1833-1914  StyleSheet.create (s = {...}) — all styles in one terse-named object
 ```
 
 ### Database Schema (SQLite — `divine_journal.db`)
 
 ```sql
--- Current tables (initialized in initDb, lines 50-58):
-entries       (id INTEGER PK, title TEXT, content TEXT, category TEXT DEFAULT 'мысль',
-               created_at DATETIME DEFAULT CURRENT_TIMESTAMP, linked_verses TEXT DEFAULT '[]')
-bookmarks     (id INTEGER PK, verse_id TEXT UNIQUE, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
-reading_plan  (id INTEGER PK, date TEXT, book TEXT, chapter INTEGER, completed BOOLEAN DEFAULT 0,
-               UNIQUE(date, book, chapter))
-daily_notes   (id INTEGER PK, date TEXT UNIQUE, notes TEXT DEFAULT '')
-fasting       (id INTEGER PK, start_date TEXT, end_date TEXT, notes TEXT DEFAULT '',
-               created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
+-- Current tables (initialized in initDb):
+entries          (id INTEGER PK, title TEXT, content TEXT, category TEXT DEFAULT 'мысль',
+                  created_at DATETIME DEFAULT CURRENT_TIMESTAMP, linked_verses TEXT DEFAULT '[]',
+                  folder_id INTEGER DEFAULT NULL)
+bookmarks        (id INTEGER PK, verse_id TEXT UNIQUE, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
+reading_plan     (id INTEGER PK, date TEXT, book TEXT, chapter INTEGER, completed BOOLEAN DEFAULT 0,
+                  UNIQUE(date, book, chapter))
+daily_notes      (id INTEGER PK, date TEXT UNIQUE, notes TEXT DEFAULT '')
+fasting          (id INTEGER PK, start_date TEXT, end_date TEXT, notes TEXT DEFAULT '',
+                  created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
+folders          (id INTEGER PK, name TEXT, color TEXT DEFAULT '#8B4513',
+                  icon TEXT DEFAULT 'folder', sort_order INTEGER DEFAULT 0)
+daily_verse_history (id INTEGER PK, date TEXT UNIQUE, verse_id TEXT, seen BOOLEAN DEFAULT 0)
+app_settings     (key TEXT PK, value TEXT)
+-- Migration: ALTER TABLE entries ADD COLUMN folder_id (wrapped in try/catch)
 ```
 
 ### Key Patterns
 
-- **Navigation**: Manual tab state (`useState<Tab>`) at line 104, not React Navigation's tab navigator (despite it being in dependencies). Cross-tab nav via `navigateToBible()` callback.
+- **Navigation**: Manual tab state (`useState<Tab>`) not React Navigation's tab navigator (despite it being in dependencies). Cross-tab nav via `navigateToBible()` callback.
 - **Data loading**: Each screen has its own `load()` callback triggered by `useEffect`.
-- **Entry content**: Stored as JSON array of `Block[]` — each block is `{id, type:'text'|'verse', content, boxColor?, textStyle?}`.
-- **Styling**: Single `StyleSheet.create(s)` object at bottom. Colors from `C` constant object at top.
+- **Entry content**: Stored as JSON array of `Block[]` — each block is `{id, type:'text'|'verse'|'divider', content, boxColor?, textStyle?}`.
+- **Daily notes**: Also Block[] JSON format (backward-compatible with legacy plain text strings).
+- **Theming**: THEMES object with light/dark/sepia palettes. ThemeContext + ThemeProvider with persistent settings in `app_settings` table.
+- **Styling**: Single `StyleSheet.create(s)` object at bottom. Colors from `C` constant (static default = light theme).
 - **Modals**: All use RN `<Modal>` component. Bottom sheets use `sheetOverlay` + `sheet` styles.
 - **No external state management** — all state is local `useState` within each screen component.
+- **File system**: `expo-file-system` v19 uses new API (`File`, `Paths` classes). Import as `import { File as ExpoFile, Paths } from 'expo-file-system'`.
 
 ### Current Dependencies
 
@@ -71,13 +84,30 @@ fasting       (id INTEGER PK, start_date TEXT, end_date TEXT, notes TEXT DEFAULT
 "@react-navigation/native": "^7.0.0",
 "@react-navigation/native-stack": "^7.0.0",
 "expo": "^54.0.32",
+"expo-document-picker": "^14.0.8",
+"expo-file-system": "^19.0.21",
+"expo-sharing": "^14.0.8",
 "expo-sqlite": "~16.0.10",
 "expo-status-bar": "~3.0.9",
 "react": "19.1.0",
 "react-native": "0.81.5",
 "react-native-safe-area-context": "~5.6.0",
-"react-native-screens": "~4.16.0"
+"react-native-screens": "~4.16.0",
+"react-native-svg": "^15.15.2"
 ```
+
+### Testing
+
+- Run: `npm test` (Jest + ts-jest, NOT jest-expo)
+- 46 unit tests in `__tests__/utils.test.ts`
+- Tests cover: fmtDate, getMonthDays, getDailyVerseIndex, getVColor, getFSize, extractKeywords, parseBlocks, parseNote, calcStreak
+- When adding new pure functions, add corresponding tests
+
+### Known TS Errors (pre-existing, harmless)
+
+- 4 Ionicons type inference errors (`string` not assignable to icon name union type)
+- 1 BibleVerses.ts union type complexity error
+- These existed before any enhancements and do not affect runtime
 
 ---
 
