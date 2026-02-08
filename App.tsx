@@ -364,7 +364,7 @@ const VerseFormatModal = ({ visible, onClose, verseData, onSave }: { visible: bo
   const handleSave = () => { onSave({ ...verseData, fontFamily: fontId, highlights: highlights.length > 0 ? highlights : undefined }); onClose(); };
 
   return (
-    <Modal visible={visible} animationType="slide"><SafeAreaView style={s.modal}>
+    <Modal visible={visible} animationType="slide" statusBarTranslucent><SafeAreaView style={[s.modal, { paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }]}>
       <View style={s.modalHdr}><TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity><Text style={s.modalTitle}>Форматирование</Text><TouchableOpacity onPress={handleSave}><Text style={s.saveTxt}>Готово</Text></TouchableOpacity></View>
       <ScrollView style={s.modalBody}>
         <Text style={s.verseRef}>{ref}</Text>
@@ -708,16 +708,16 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
         );
       }} contentContainerStyle={s.list} ListEmptyComponent={<View style={s.empty}><Ionicons name="journal-outline" size={64} color={C.border} /><Text style={s.emptyTxt}>Записей пока нет</Text></View>} />
 
-      <Modal visible={viewing !== null} animationType="slide">
-        <SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]}>
+      <Modal visible={viewing !== null} animationType="slide" statusBarTranslucent>
+        <SafeAreaView style={[s.modal, { backgroundColor: theme.bg, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }]}>
           <View style={[s.modalHdr, { borderBottomColor: theme.border }]}><TouchableOpacity onPress={() => setViewing(null)}><Ionicons name="close" size={24} color={theme.text} /></TouchableOpacity><Text style={[s.modalTitle, { color: theme.text }]} numberOfLines={1}>{viewing?.title}</Text><TouchableOpacity onPress={() => viewing && openEdit(viewing)}><Ionicons name="create-outline" size={24} color={theme.primary} /></TouchableOpacity></View>
           <ScrollView style={s.viewContent}>{viewing && <><View style={s.viewMeta}><View style={[s.badge, { backgroundColor: catStyle(viewing.category).bg }]}><Ionicons name={catIcon(viewing.category)} size={14} color={catStyle(viewing.category).color} /><Text style={[s.badgeTxt, { color: catStyle(viewing.category).color }]}>{viewing.category}</Text></View><Text style={s.viewDate}>{new Date(viewing.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text></View>{parseBlocks(viewing.content).map(b => <View key={b.id}>{b.type === 'text' ? renderText(b) : renderVerse(b)}</View>)}</>}</ScrollView>
           <TouchableOpacity style={s.delBtn} onPress={() => viewing && del(viewing.id)}><Ionicons name="trash-outline" size={20} color={C.error} /><Text style={s.delTxt}>Удалить</Text></TouchableOpacity>
         </SafeAreaView>
       </Modal>
 
-      <Modal visible={modal} animationType="slide">
-        <SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+      <Modal visible={modal} animationType="slide" statusBarTranslucent>
+        <SafeAreaView style={[s.modal, { backgroundColor: theme.bg, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }]}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
           <View style={[s.modalHdr, { borderBottomColor: theme.border }]}><TouchableOpacity onPress={reset}><Ionicons name="close" size={24} color={theme.text} /></TouchableOpacity><Text style={[s.modalTitle, { color: theme.text }]}>{editing ? 'Редактировать' : 'Новая запись'}</Text><TouchableOpacity onPress={save}><Text style={[s.saveTxt, { color: theme.primary }]}>Сохранить</Text></TouchableOpacity></View>
           <ScrollView ref={scrollRef} style={s.modalBody} keyboardShouldPersistTaps="handled" scrollEventThrottle={16}>
             <Text style={s.label}>Категория</Text>
@@ -737,7 +737,7 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
             <Text style={s.label}>Заголовок</Text>
             <TextInput style={s.input} value={title} onChangeText={setTitle} placeholder="Название..." placeholderTextColor={C.textMuted} />
             <Text style={s.label}>Содержание</Text>
-            {blocks.map((b, i) => <View key={b.id} onLayout={(e) => { blockPositions.current[b.id] = e.nativeEvent.layout.y; }}>{b.type === 'divider' ? <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 8, gap: 8 }}><View style={{ flex: 1, height: 1, backgroundColor: C.border }} /><View style={{ flexDirection: 'row', gap: 4 }}>{i > 0 && <TouchableOpacity onPress={() => moveBlock(i, -1)}><Ionicons name="arrow-up" size={16} color={C.textMuted} /></TouchableOpacity>}{i < blocks.length - 1 && <TouchableOpacity onPress={() => moveBlock(i, 1)}><Ionicons name="arrow-down" size={16} color={C.textMuted} /></TouchableOpacity>}<TouchableOpacity onPress={() => removeBlock(b.id)}><Ionicons name="close" size={16} color={C.error} /></TouchableOpacity></View></View> : b.type === 'text' ? <View style={b.textStyle?.highlight ? { borderLeftWidth: 4, borderLeftColor: TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight)?.bg, borderRadius: 8, marginBottom: 4, paddingLeft: 4 } : undefined}><View style={{ flexDirection: 'row', alignItems: 'center' }}><View style={{ flex: 1 }}><TextInput style={[s.input, s.textArea, activeId === b.id && s.inputAct, b.textStyle?.fontSize && { fontSize: getFSize(b.textStyle.fontSize) }, b.textStyle?.bold && { fontWeight: 'bold' }, b.textStyle?.italic && { fontStyle: 'italic' }]} value={b.content} onChangeText={t => updateBlock(b.id, t)} onSelectionChange={(e) => setSel(e.nativeEvent.selection)} onFocus={() => { setActiveId(b.id); setTStyle(b.textStyle || {}); setSel({start: 0, end: 0}); setTimeout(() => { const y = blockPositions.current[b.id]; if (y !== undefined && scrollRef.current) { scrollRef.current.scrollTo({ y: Math.max(0, y - 100), animated: true }); } }, 150); }} placeholder={i === 0 ? "Начните писать..." : "Продолжайте..."} placeholderTextColor={C.textMuted} multiline textAlignVertical="top" /></View>{blocks.length > 1 && <View style={{ paddingLeft: 4, gap: 2 }}>{i > 0 && <TouchableOpacity onPress={() => moveBlock(i, -1)}><Ionicons name="chevron-up" size={16} color={C.textMuted} /></TouchableOpacity>}{i < blocks.length - 1 && <TouchableOpacity onPress={() => moveBlock(i, 1)}><Ionicons name="chevron-down" size={16} color={C.textMuted} /></TouchableOpacity>}</View>}</View><TouchableOpacity style={s.insertBtn} onPress={() => { setInsertId(b.id); setVpick(true); }}><Ionicons name="add-circle" size={18} color={C.primary} /><Text style={s.insertTxt}>Вставить стихи</Text></TouchableOpacity></View> : <View style={[s.verseEdit, { backgroundColor: getVColor(b.boxColor).bg, borderLeftColor: getVColor(b.boxColor).border }]}>{(() => { try { const d = JSON.parse(b.content) as VerseData; const font = getVFont(d.fontFamily); const ref = d.verseEnd ? `${d.book} ${d.chapter}:${d.verse}-${d.verseEnd}` : `${d.book} ${d.chapter}:${d.verse}`; return <><View style={s.verseEditHdr}><View style={s.verseEditLeft}><Ionicons name="book" size={16} color={getVColor(b.boxColor).border} /><Text style={[s.verseRef, { color: getVColor(b.boxColor).border }]}>{ref}</Text>{d.fontFamily && <Text style={s.verseFontLabel}>{font.name}</Text>}</View><View style={s.verseEditActs}><TouchableOpacity onPress={() => openVerseFormat(b.id)}><Ionicons name="text" size={20} color={getVColor(b.boxColor).border} /></TouchableOpacity><TouchableOpacity onPress={() => setColorPick(b.id)}><Ionicons name="color-palette" size={20} color={getVColor(b.boxColor).border} /></TouchableOpacity><TouchableOpacity onPress={() => removeBlock(b.id)}><Ionicons name="close-circle" size={22} color={C.error} /></TouchableOpacity></View></View><HighlightedVerseText text={d.text} highlights={d.highlights} fontFamily={font.family} baseStyle={s.verseEditTxt} /></>; } catch { return null; } })()}</View>}</View>)}
+            {blocks.map((b, i) => <View key={b.id} onLayout={(e) => { blockPositions.current[b.id] = e.nativeEvent.layout.y; }}>{b.type === 'divider' ? <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 8, gap: 8 }}><View style={{ flex: 1, height: 1, backgroundColor: C.border }} /><View style={{ flexDirection: 'row', gap: 4 }}>{i > 0 && <TouchableOpacity onPress={() => moveBlock(i, -1)}><Ionicons name="arrow-up" size={16} color={C.textMuted} /></TouchableOpacity>}{i < blocks.length - 1 && <TouchableOpacity onPress={() => moveBlock(i, 1)}><Ionicons name="arrow-down" size={16} color={C.textMuted} /></TouchableOpacity>}<TouchableOpacity onPress={() => removeBlock(b.id)}><Ionicons name="close" size={16} color={C.error} /></TouchableOpacity></View></View> : b.type === 'text' ? <View style={b.textStyle?.highlight ? { borderLeftWidth: 4, borderLeftColor: TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight)?.bg, borderRadius: 8, marginBottom: 4, paddingLeft: 4 } : undefined}><View style={{ flexDirection: 'row', alignItems: 'center' }}><View style={{ flex: 1 }}><TextInput style={[s.input, s.textArea, activeId === b.id && s.inputAct, b.textStyle?.fontSize && { fontSize: getFSize(b.textStyle.fontSize) }, b.textStyle?.bold && { fontWeight: 'bold' }, b.textStyle?.italic && { fontStyle: 'italic' }, b.textStyle?.underline && { textDecorationLine: 'underline' as const }, b.textStyle?.highlight && { backgroundColor: TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight)?.bg }]} value={b.content} onChangeText={t => updateBlock(b.id, t)} onSelectionChange={(e) => setSel(e.nativeEvent.selection)} onFocus={() => { setActiveId(b.id); setTStyle(b.textStyle || {}); setSel({start: 0, end: 0}); setTimeout(() => { const y = blockPositions.current[b.id]; if (y !== undefined && scrollRef.current) { scrollRef.current.scrollTo({ y: Math.max(0, y - 100), animated: true }); } }, 150); }} placeholder={i === 0 ? "Начните писать..." : "Продолжайте..."} placeholderTextColor={C.textMuted} multiline textAlignVertical="top" /></View>{blocks.length > 1 && <View style={{ paddingLeft: 4, gap: 2 }}>{i > 0 && <TouchableOpacity onPress={() => moveBlock(i, -1)}><Ionicons name="chevron-up" size={16} color={C.textMuted} /></TouchableOpacity>}{i < blocks.length - 1 && <TouchableOpacity onPress={() => moveBlock(i, 1)}><Ionicons name="chevron-down" size={16} color={C.textMuted} /></TouchableOpacity>}</View>}</View>{b.ranges && b.ranges.length > 0 && b.content.length > 0 && <View style={{ backgroundColor: theme.surfaceAlt, borderRadius: 8, padding: 10, marginTop: 4, marginBottom: 4 }}><Text style={{ fontSize: 11, color: theme.textMuted, marginBottom: 4 }}>Предпросмотр:</Text>{(() => { const len = b.content.length, pts = new Set<number>([0, len]); b.ranges.forEach(r => { pts.add(Math.max(0, r.start)); pts.add(Math.min(len, r.end)); }); const srt = Array.from(pts).sort((a, c) => a - c); return <Text style={{ fontSize: 14, lineHeight: 22, color: theme.text }}>{srt.slice(0, -1).map((ps, ix) => { const pe = srt[ix + 1]; const rs: any = {}; if (b.textStyle?.bold) rs.fontWeight = 'bold'; if (b.textStyle?.italic) rs.fontStyle = 'italic'; if (b.textStyle?.underline) rs.textDecorationLine = 'underline'; for (const r of (b.ranges || [])) { if (r.start <= ps && r.end >= pe) { if (r.bold) rs.fontWeight = 'bold'; if (r.italic) rs.fontStyle = 'italic'; if (r.underline) rs.textDecorationLine = 'underline'; if (r.highlight) { const hl = TEXT_HIGHLIGHTS.find(h => h.id === r.highlight); if (hl) rs.backgroundColor = hl.bg; } } } return <Text key={ix} style={rs}>{b.content.slice(ps, pe)}</Text>; })}</Text>; })()}</View>}<TouchableOpacity style={s.insertBtn} onPress={() => { setInsertId(b.id); setVpick(true); }}><Ionicons name="add-circle" size={18} color={C.primary} /><Text style={s.insertTxt}>Вставить стихи</Text></TouchableOpacity></View> : <View style={[s.verseEdit, { backgroundColor: getVColor(b.boxColor).bg, borderLeftColor: getVColor(b.boxColor).border }]}>{(() => { try { const d = JSON.parse(b.content) as VerseData; const font = getVFont(d.fontFamily); const ref = d.verseEnd ? `${d.book} ${d.chapter}:${d.verse}-${d.verseEnd}` : `${d.book} ${d.chapter}:${d.verse}`; return <><View style={s.verseEditHdr}><View style={s.verseEditLeft}><Ionicons name="book" size={16} color={getVColor(b.boxColor).border} /><Text style={[s.verseRef, { color: getVColor(b.boxColor).border }]}>{ref}</Text>{d.fontFamily && <Text style={s.verseFontLabel}>{font.name}</Text>}</View><View style={s.verseEditActs}><TouchableOpacity onPress={() => openVerseFormat(b.id)}><Ionicons name="text" size={20} color={getVColor(b.boxColor).border} /></TouchableOpacity><TouchableOpacity onPress={() => setColorPick(b.id)}><Ionicons name="color-palette" size={20} color={getVColor(b.boxColor).border} /></TouchableOpacity><TouchableOpacity onPress={() => removeBlock(b.id)}><Ionicons name="close-circle" size={22} color={C.error} /></TouchableOpacity></View></View><HighlightedVerseText text={d.text} highlights={d.highlights} fontFamily={font.family} baseStyle={s.verseEditTxt} /></>; } catch { return null; } })()}</View>}</View>)}
             <View style={{ height: 200 }} />
           </ScrollView>
           {activeId && keyboardVisible && <RTToolbar style={tStyle} onToggle={toggleStyle} onSize={setFontSize} onHighlight={setHighlight} onDivider={addDivider} />}
@@ -827,7 +827,7 @@ const VersePickerModal = ({ visible, onClose, onSelect }: { visible: boolean; on
   const results = q.length > 2 ? BIBLE_VERSES.filter(v => v.text.toLowerCase().includes(q.toLowerCase()) || v.book.toLowerCase().includes(q.toLowerCase())).slice(0, 50) : [];
 
   return (
-    <Modal visible={visible} animationType="slide"><SafeAreaView style={s.modal}>
+    <Modal visible={visible} animationType="slide" statusBarTranslucent><SafeAreaView style={[s.modal, { paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }]}>
       <View style={s.modalHdr}><TouchableOpacity onPress={close}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity><Text style={s.modalTitle}>Выбрать стихи {sel.size > 0 && `(${sel.size})`}</Text>{sel.size > 0 ? <TouchableOpacity onPress={confirm}><Text style={s.saveTxt}>Добавить</Text></TouchableOpacity> : <View style={{ width: 60 }} />}</View>
       {sel.size > 0 && <View style={s.colorRow}><Text style={s.colorLbl}>Цвет:</Text>{VERSE_COLORS.map(c => <TouchableOpacity key={c.id} style={[s.colorItem, { backgroundColor: c.bg, borderColor: c.border }, col === c.id && s.colorItemAct]} onPress={() => setCol(c.id)} />)}</View>}
       <View style={s.searchBox}><Ionicons name="search" size={20} color={C.textMuted} /><TextInput style={s.searchIn} value={q} onChangeText={setQ} placeholder="Поиск..." placeholderTextColor={C.textMuted} />{q.length > 0 && <TouchableOpacity onPress={() => setQ('')}><Ionicons name="close-circle" size={20} color={C.textMuted} /></TouchableOpacity>}</View>
@@ -1249,8 +1249,8 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
         </View>
       </Modal>
 
-      <Modal visible={editNote} animationType="slide">
-        <SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+      <Modal visible={editNote} animationType="slide" statusBarTranslucent>
+        <SafeAreaView style={[s.modal, { backgroundColor: theme.bg, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }]}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
           <View style={[s.modalHdr, { borderBottomColor: theme.border }]}>
             <TouchableOpacity onPress={() => setEditNote(false)}><Ionicons name="close" size={24} color={theme.text} /></TouchableOpacity>
             <Text style={[s.modalTitle, { color: theme.text }]}>Заметка — {fmtDateRu(selDate)}</Text>
@@ -1260,7 +1260,7 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
             {noteBlocks.map((b, i) => <View key={b.id} onLayout={(e) => { noteBlockPos.current[b.id] = e.nativeEvent.layout.y; }}>
               {b.type === 'divider' ? <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 8, gap: 8 }}><View style={{ flex: 1, height: 1, backgroundColor: C.border }} /><TouchableOpacity onPress={() => removeNoteBlock(b.id)}><Ionicons name="close" size={16} color={C.error} /></TouchableOpacity></View>
               : <View style={b.textStyle?.highlight ? { borderLeftWidth: 4, borderLeftColor: TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight)?.bg, borderRadius: 8, marginBottom: 4, paddingLeft: 4 } : undefined}>
-                <TextInput style={[s.input, s.textArea, noteActiveId === b.id && s.inputAct, b.textStyle?.fontSize && { fontSize: getFSize(b.textStyle.fontSize) }, b.textStyle?.bold && { fontWeight: 'bold' }, b.textStyle?.italic && { fontStyle: 'italic' }]} value={b.content} onChangeText={t => updateNoteBlock(b.id, t)} onSelectionChange={(e) => setNoteSel(e.nativeEvent.selection)} onFocus={() => { setNoteActiveId(b.id); setNoteTStyle(b.textStyle || {}); setNoteSel({start: 0, end: 0}); setTimeout(() => { const y = noteBlockPos.current[b.id]; if (y !== undefined && noteScrollRef.current) { noteScrollRef.current.scrollTo({ y: Math.max(0, y - 100), animated: true }); } }, 150); }} placeholder={i === 0 ? "Мысли, молитвы..." : "Продолжайте..."} placeholderTextColor={C.textMuted} multiline textAlignVertical="top" />
+                <TextInput style={[s.input, s.textArea, noteActiveId === b.id && s.inputAct, b.textStyle?.fontSize && { fontSize: getFSize(b.textStyle.fontSize) }, b.textStyle?.bold && { fontWeight: 'bold' }, b.textStyle?.italic && { fontStyle: 'italic' }, b.textStyle?.underline && { textDecorationLine: 'underline' as const }, b.textStyle?.highlight && { backgroundColor: TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight)?.bg }]} value={b.content} onChangeText={t => updateNoteBlock(b.id, t)} onSelectionChange={(e) => setNoteSel(e.nativeEvent.selection)} onFocus={() => { setNoteActiveId(b.id); setNoteTStyle(b.textStyle || {}); setNoteSel({start: 0, end: 0}); setTimeout(() => { const y = noteBlockPos.current[b.id]; if (y !== undefined && noteScrollRef.current) { noteScrollRef.current.scrollTo({ y: Math.max(0, y - 100), animated: true }); } }, 150); }} placeholder={i === 0 ? "Мысли, молитвы..." : "Продолжайте..."} placeholderTextColor={C.textMuted} multiline textAlignVertical="top" />
               </View>}
             </View>)}
             <TouchableOpacity style={s.insertBtn} onPress={addNoteTextBlock}>
@@ -1682,13 +1682,30 @@ const computeGraph = (entries: Entry[], folders: Folder[]): { nodes: GraphNode[]
 };
 
 const GraphView = ({ entries, folders, onClose }: { entries: Entry[]; folders: Folder[]; onClose: () => void }) => {
+  const { theme } = useTheme();
   const [selected, setSelected] = useState<GraphNode | null>(null);
+  const [viewEntry, setViewEntry] = useState<Entry | null>(null);
   const graph = useMemo(() => computeGraph(entries, folders), [entries, folders]);
 
   const typeLabel: Record<string, string> = { entry: 'Запись', verse: 'Стих', folder: 'Папка' };
+  const getEntry = (node: GraphNode) => node.type === 'entry' ? entries.find(e => `e${e.id}` === node.id) || null : null;
+
+  const renderEntryBlock = (b: Block) => {
+    if (b.type === 'divider') return <View style={{ height: 1, backgroundColor: theme.border, marginVertical: 12 }} />;
+    if (b.type === 'verse') { try { const d = JSON.parse(b.content) as VerseData; const vc = getVColor(b.boxColor); const ref = d.verseEnd ? `${d.book} ${d.chapter}:${d.verse}-${d.verseEnd}` : `${d.book} ${d.chapter}:${d.verse}`; return <View style={[s.verseView, { backgroundColor: vc.bg, borderLeftColor: vc.border }]}><View style={s.verseHdr}><Ionicons name="book" size={16} color={vc.border} /><Text style={[s.verseRef, { color: vc.border }]}>{ref}</Text></View><Text style={[s.verseTxt, { color: theme.text }]}>{d.text}</Text></View>; } catch { return null; } }
+    if (!b.content) return null;
+    const st: any = { fontSize: 16, color: theme.text, lineHeight: 26, marginBottom: 8 };
+    if (b.textStyle?.bold) st.fontWeight = 'bold'; if (b.textStyle?.italic) st.fontStyle = 'italic'; if (b.textStyle?.underline) st.textDecorationLine = 'underline';
+    if (b.textStyle?.highlight) { const hl = TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight); if (hl) st.backgroundColor = hl.bg; }
+    if (!b.ranges?.length) return <Text style={st}>{b.content}</Text>;
+    const len = b.content.length, pts = new Set<number>([0, len]);
+    b.ranges.forEach(r => { pts.add(Math.max(0, r.start)); pts.add(Math.min(len, r.end)); });
+    const sorted = Array.from(pts).sort((a, c) => a - c);
+    return <Text>{sorted.slice(0, -1).map((ps, i) => { const pe = sorted[i + 1]; const rs: any = { ...st }; for (const r of (b.ranges || [])) { if (r.start <= ps && r.end >= pe) { if (r.bold) rs.fontWeight = 'bold'; if (r.italic) rs.fontStyle = 'italic'; if (r.underline) rs.textDecorationLine = 'underline'; if (r.highlight) { const hl = TEXT_HIGHLIGHTS.find(h => h.id === r.highlight); if (hl) rs.backgroundColor = hl.bg; } } } return <Text key={i} style={rs}>{b.content.slice(ps, pe)}</Text>; })}</Text>;
+  };
 
   return (
-    <Modal visible animationType="slide"><SafeAreaView style={s.modal}>
+    <Modal visible animationType="slide" statusBarTranslucent><SafeAreaView style={[s.modal, { paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }]}>
       <View style={s.modalHdr}>
         <TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity>
         <Text style={s.modalTitle}>Граф связей</Text>
@@ -1723,33 +1740,61 @@ const GraphView = ({ entries, folders, onClose }: { entries: Entry[]; folders: F
             ))}
           </View>
           {selected && (
-            <View style={{ backgroundColor: C.surface, borderRadius: 12, padding: 16, marginTop: 12 }}>
+            <View style={{ backgroundColor: theme.surface, borderRadius: 12, padding: 16, marginTop: 12 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
                 <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: selected.color }} />
-                <Text style={{ fontSize: 16, fontWeight: '600', color: C.text, flex: 1 }}>{selected.label}</Text>
-                <Text style={{ fontSize: 12, color: C.textMuted }}>({typeLabel[selected.type]})</Text>
+                <Text style={{ fontSize: 16, fontWeight: '600', color: theme.text, flex: 1 }}>{selected.label}</Text>
+                <Text style={{ fontSize: 12, color: theme.textMuted }}>({typeLabel[selected.type]})</Text>
               </View>
+              {selected.type === 'entry' && getEntry(selected) && (
+                <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: theme.primary, paddingVertical: 10, borderRadius: 10, marginBottom: 10 }} onPress={() => setViewEntry(getEntry(selected))}>
+                  <Ionicons name="reader-outline" size={18} color={theme.textOn} />
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textOn }}>Открыть запись</Text>
+                </TouchableOpacity>
+              )}
               {(() => {
                 const connEdges = graph.edges.filter(e => e.from === selected.id || e.to === selected.id);
                 const connNodes = connEdges.map(e => graph.nodes.find(n => n.id === (e.from === selected.id ? e.to : e.from))).filter(Boolean);
                 return <>
-                  <Text style={{ fontSize: 13, color: C.textSec, marginBottom: connNodes.length > 0 ? 8 : 0 }}>Связей: {connEdges.length}</Text>
+                  <Text style={{ fontSize: 13, color: theme.textSec, marginBottom: connNodes.length > 0 ? 8 : 0 }}>Связей: {connEdges.length}</Text>
                   {connNodes.map((cn, i) => cn && (
-                    <TouchableOpacity key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 }} onPress={() => setSelected(cn)}>
+                    <TouchableOpacity key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 }} onPress={() => { if (cn.type === 'entry') { const entry = entries.find(e => `e${e.id}` === cn.id); if (entry) { setViewEntry(entry); return; } } setSelected(cn); }}>
                       <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: cn.color }} />
-                      <Text style={{ fontSize: 13, color: C.primary }}>{cn.label}</Text>
-                      <Text style={{ fontSize: 11, color: C.textMuted }}>({typeLabel[cn.type]})</Text>
+                      <Text style={{ fontSize: 13, color: theme.primary }}>{cn.label}</Text>
+                      <Text style={{ fontSize: 11, color: theme.textMuted }}>({typeLabel[cn.type]})</Text>
+                      {cn.type === 'entry' && <Ionicons name="open-outline" size={12} color={theme.primary} />}
                     </TouchableOpacity>
                   ))}
                 </>;
               })()}
             </View>
           )}
-          <View style={{ marginTop: 16, padding: 12, backgroundColor: C.surfaceAlt, borderRadius: 12 }}>
-            <Text style={{ fontSize: 13, color: C.textSec, textAlign: 'center' }}>{graph.nodes.length} узлов • {graph.edges.length} связей</Text>
+          <View style={{ marginTop: 16, padding: 12, backgroundColor: theme.surfaceAlt, borderRadius: 12 }}>
+            <Text style={{ fontSize: 13, color: theme.textSec, textAlign: 'center' }}>{graph.nodes.length} узлов • {graph.edges.length} связей</Text>
           </View>
         </View>
       </ScrollView>
+      {viewEntry && (
+        <Modal visible animationType="slide" statusBarTranslucent>
+          <SafeAreaView style={[s.modal, { backgroundColor: theme.bg, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }]}>
+            <View style={[s.modalHdr, { borderBottomColor: theme.border }]}>
+              <TouchableOpacity onPress={() => setViewEntry(null)}><Ionicons name="arrow-back" size={24} color={theme.text} /></TouchableOpacity>
+              <Text style={[s.modalTitle, { color: theme.text }]} numberOfLines={1}>{viewEntry.title}</Text>
+              <View style={{ width: 24 }} />
+            </View>
+            <ScrollView style={s.viewContent}>
+              <View style={s.viewMeta}>
+                <View style={[s.badge, { backgroundColor: catStyle(viewEntry.category).bg }]}>
+                  <Ionicons name={catIcon(viewEntry.category) as any} size={14} color={catStyle(viewEntry.category).color} />
+                  <Text style={[s.badgeTxt, { color: catStyle(viewEntry.category).color }]}>{viewEntry.category}</Text>
+                </View>
+                <Text style={[s.viewDate, { color: theme.textMuted }]}>{new Date(viewEntry.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text>
+              </View>
+              {parseBlocks(viewEntry.content).map(b => <View key={b.id}>{renderEntryBlock(b)}</View>)}
+            </ScrollView>
+          </SafeAreaView>
+        </Modal>
+      )}
     </SafeAreaView></Modal>
   );
 };
@@ -2065,10 +2110,10 @@ const s = StyleSheet.create({
   fmtHlItem: { flexDirection: 'row', backgroundColor: C.surface, padding: 12, borderRadius: 10, marginBottom: 8, alignItems: 'center' }, fmtHlRange: { fontSize: 13, fontWeight: '600', color: C.primary }, fmtHlPreview: { fontSize: 13, color: C.textSec, fontStyle: 'italic' },
   fmtHlStyles: { flexDirection: 'row', gap: 6, marginTop: 4 }, fmtHlTag: { fontSize: 11, color: C.textMuted, backgroundColor: C.surfaceAlt, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }, fmtHlColorDot: { width: 16, height: 16, borderRadius: 8 },
   // Folder styles
-  folderBar: { marginBottom: 8 },
-  folderChip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: C.surface, borderWidth: 1, borderColor: C.border, gap: 6 },
+  folderBar: { minHeight: 52, marginBottom: 8 },
+  folderChip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, backgroundColor: C.surface, borderWidth: 1.5, borderColor: C.border, gap: 6, minHeight: 40 },
   folderChipAct: { backgroundColor: C.primary, borderColor: C.primary },
-  folderChipTxt: { fontSize: 13, fontWeight: '500', color: C.textSec },
+  folderChipTxt: { fontSize: 14, fontWeight: '500', color: C.textSec },
   folderChipTxtAct: { color: C.textOn },
   // Statistics styles
   statBar: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
