@@ -38,8 +38,8 @@ const THEMES = {
 type ThemeId = keyof typeof THEMES;
 type ThemeColors = Omit<typeof THEMES.light, 'statusBar'> & { statusBar: 'dark-content' | 'light-content' };
 
-const ThemeContext = React.createContext<{ theme: ThemeColors; themeId: ThemeId; setThemeId: (id: ThemeId) => void; fontScale: number; setFontScale: (s: number) => void }>({
-  theme: THEMES.light, themeId: 'light', setThemeId: () => {}, fontScale: 1, setFontScale: () => {},
+const ThemeContext = React.createContext<{ theme: ThemeColors; themeId: ThemeId; setThemeId: (id: ThemeId) => void; fontScale: number; setFontScale: (s: number) => void; bibleFont: string; setBibleFont: (f: string) => void }>({
+  theme: THEMES.light, themeId: 'light', setThemeId: () => {}, fontScale: 1, setFontScale: () => {}, bibleFont: 'serif', setBibleFont: () => {},
 });
 const useTheme = () => React.useContext(ThemeContext);
 
@@ -212,6 +212,7 @@ const AppContent = () => {
 const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
   const [themeId, setThemeId] = useState<ThemeId>('light');
   const [fontScale, setFontScale] = useState(1);
+  const [bibleFont, setBibleFont] = useState('serif');
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
@@ -222,6 +223,8 @@ const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
         if (t && t.value in THEMES) setThemeId(t.value as ThemeId);
         const fs = await db.getFirstAsync<{ value: string }>("SELECT value FROM app_settings WHERE key='fontScale'");
         if (fs) setFontScale(parseFloat(fs.value));
+        const bf = await db.getFirstAsync<{ value: string }>("SELECT value FROM app_settings WHERE key='bibleFont'");
+        if (bf && VERSE_FONTS.some(f => f.id === bf.value)) setBibleFont(bf.value);
       } catch (e) {}
       setLoaded(true);
     };
@@ -238,10 +241,15 @@ const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
     db.runAsync("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('fontScale', ?)", [String(s)]);
   };
 
+  const handleSetBibleFont = (f: string) => {
+    setBibleFont(f);
+    db.runAsync("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('bibleFont', ?)", [f]);
+  };
+
   if (!loaded) return null;
 
   return (
-    <ThemeContext.Provider value={{ theme: THEMES[themeId], themeId, setThemeId: handleSetTheme, fontScale, setFontScale: handleSetFontScale }}>
+    <ThemeContext.Provider value={{ theme: THEMES[themeId], themeId, setThemeId: handleSetTheme, fontScale, setFontScale: handleSetFontScale, bibleFont, setBibleFont: handleSetBibleFont }}>
       {children}
     </ThemeContext.Provider>
   );
@@ -411,7 +419,8 @@ const VerseFormatModal = ({ visible, onClose, verseData, onSave }: { visible: bo
 
 // Journal Screen
 const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: number) => void }) => {
-  const { theme } = useTheme();
+  const { theme, bibleFont } = useTheme();
+  const bibleFontFamily = getVFont(bibleFont).family;
   const [entries, setEntries] = useState<Entry[]>([]);
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<Entry | null>(null);
@@ -680,7 +689,7 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
           <Text style={s.dailyVerseLbl}>Стих дня</Text>
           <TouchableOpacity onPress={() => setShowDailyVerse(false)}><Ionicons name="close" size={18} color={C.textMuted} /></TouchableOpacity>
         </View>
-        <Text style={s.dailyVerseTxt}>"{dailyVerse.text}"</Text>
+        <Text style={[s.dailyVerseTxt, { fontFamily: bibleFontFamily }]}>"{dailyVerse.text}"</Text>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
           <Text style={s.dailyVerseRef}>— {dailyVerse.book} {dailyVerse.chapter}:{dailyVerse.verse}</Text>
           <View style={{ flexDirection: 'row', gap: 12 }}>
@@ -1462,7 +1471,8 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
 
 // Bible Screen
 const BibleScreen = ({ navTarget, clearNavTarget }: { navTarget: NavTarget | null; clearNavTarget: () => void }) => {
-  const { theme } = useTheme();
+  const { theme, bibleFont } = useTheme();
+  const bibleFontFamily = getVFont(bibleFont).family;
   const [book, setBook] = useState<BibleBook | null>(null);
   const [chap, setChap] = useState<number | null>(null);
   const [filter, setFilter] = useState<'all' | 'old' | 'new'>('all');
@@ -1505,7 +1515,7 @@ const BibleScreen = ({ navTarget, clearNavTarget }: { navTarget: NavTarget | nul
       : <FlatList data={verses} keyExtractor={i => i.id} renderItem={({ item }) => (
         <View style={[s.verseItem, { backgroundColor: theme.surface }]}>
           <Text style={[s.vNum, { color: theme.primary }]}>{item.verse}</Text>
-          <Text style={[s.vTxt, { color: theme.text }]}>{item.text}</Text>
+          <Text style={[s.vTxt, { color: theme.text, fontFamily: bibleFontFamily }]}>{item.text}</Text>
           <TouchableOpacity onPress={() => toggleBm(item.id)} style={s.bmBtn}><Ionicons name={bmarks.has(item.id) ? 'bookmark' : 'bookmark-outline'} size={20} color={bmarks.has(item.id) ? theme.primary : theme.textMuted} /></TouchableOpacity>
         </View>
       )} contentContainerStyle={s.list} />}
@@ -1515,7 +1525,8 @@ const BibleScreen = ({ navTarget, clearNavTarget }: { navTarget: NavTarget | nul
 
 // Search Screen
 const SearchScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: number) => void }) => {
-  const { theme } = useTheme();
+  const { theme, bibleFont } = useTheme();
+  const bibleFontFamily = getVFont(bibleFont).family;
   const [q, setQ] = useState('');
   const [res, setRes] = useState<BibleVerse[]>([]);
   const search = useCallback(() => { if (!q.trim()) { setRes([]); return; } setRes(BIBLE_VERSES.filter(v => v.text.toLowerCase().includes(q.toLowerCase()) || v.book.toLowerCase().includes(q.toLowerCase())).slice(0, 100)); }, [q]);
@@ -1528,7 +1539,7 @@ const SearchScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: numb
       <FlatList data={res} keyExtractor={i => i.id} renderItem={({ item }) => (
         <TouchableOpacity style={[s.searchRes, { backgroundColor: theme.surface }]} onPress={() => onNavigate(item.book, item.chapter)}>
           <Text style={[s.searchRef, { color: theme.primary }]}>{item.book} {item.chapter}:{item.verse}</Text>
-          <Text style={[s.searchTxt, { color: theme.textSec }]}>{item.text}</Text>
+          <Text style={[s.searchTxt, { color: theme.textSec, fontFamily: bibleFontFamily }]}>{item.text}</Text>
           <View style={[s.goHint, { borderTopColor: theme.borderLight }]}><Text style={[s.goHintTxt, { color: theme.primary }]}>Открыть в Библии →</Text></View>
         </TouchableOpacity>
       )} contentContainerStyle={s.list} />
@@ -1801,7 +1812,7 @@ const GraphView = ({ entries, folders, onClose }: { entries: Entry[]; folders: F
 
 // Settings Screen
 const SettingsScreen = () => {
-  const { theme, themeId, setThemeId, fontScale, setFontScale } = useTheme();
+  const { theme, themeId, setThemeId, fontScale, setFontScale, bibleFont, setBibleFont } = useTheme();
   const [stats, setStats] = useState({ e: 0, b: 0, r: 0, totalR: 0, streak: 0, fastDays: 0 });
   const [byCat, setByCat] = useState<Record<Cat, number>>({ сон: 0, откровение: 0, мысль: 0, молитва: 0 });
   const [byMonth, setByMonth] = useState<{ month: string; label: string; count: number }[]>([]);
@@ -2013,6 +2024,16 @@ const SettingsScreen = () => {
             <Text style={{ fontSize: 12, color: theme.textMuted, width: 40, textAlign: 'right' }}>{Math.round(fontScale * 100)}%</Text>
           </View>
           <Text style={{ fontSize: Math.round(14 * fontScale), color: theme.textSec, marginTop: 10, fontStyle: 'italic' }}>Образец текста</Text>
+          <Text style={{ fontSize: 14, color: theme.textSec, marginBottom: 8, marginTop: 20 }}>Шрифт Библии</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {VERSE_FONTS.map(f => (
+              <TouchableOpacity key={f.id} style={[s.statCard, { backgroundColor: theme.surface, borderWidth: 2, borderColor: bibleFont === f.id ? theme.primary : 'transparent', paddingVertical: 12 }]} onPress={() => setBibleFont(f.id)}>
+                <Text style={{ fontSize: 20, fontFamily: f.family, color: theme.text }}>Аа</Text>
+                <Text style={{ fontSize: 11, color: bibleFont === f.id ? theme.primary : theme.textMuted, marginTop: 4, fontWeight: bibleFont === f.id ? '600' : '400' }}>{f.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Text style={{ fontSize: 14, fontFamily: getVFont(bibleFont).family, color: theme.textSec, marginTop: 10, fontStyle: 'italic', lineHeight: 22 }}>"В начале сотворил Бог небо и землю."</Text>
         </View>
 
         <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>ИНСТРУМЕНТЫ</Text>
