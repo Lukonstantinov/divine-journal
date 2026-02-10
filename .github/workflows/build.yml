@@ -30,10 +30,22 @@ jobs:
 
       - name: Build APK
         working-directory: android
-        run: ./gradlew assembleRelease
+        env:
+          GRADLE_OPTS: '-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=512m'
+        run: ./gradlew assembleRelease --stacktrace --no-daemon
 
-      - name: Upload APK
+      - name: Fallback to debug build
+        if: failure()
+        working-directory: android
+        env:
+          GRADLE_OPTS: '-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=512m'
+        run: ./gradlew assembleDebug --stacktrace --no-daemon
+
+      - name: Upload Release APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: divine-journal.apk
-          path: android/app/build/outputs/apk/release/*.apk
+          path: |
+            android/app/build/outputs/apk/release/*.apk
+            android/app/build/outputs/apk/debug/*.apk
