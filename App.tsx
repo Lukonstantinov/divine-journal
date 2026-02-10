@@ -1,18 +1,52 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Modal, ScrollView, Alert, StatusBar, KeyboardAvoidingView, Platform, Dimensions, AppState } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Modal, ScrollView, Alert, StatusBar, SafeAreaView, KeyboardAvoidingView, Platform, Dimensions, AppState, Keyboard } from 'react-native';
 import * as SQLite from 'expo-sqlite';
 import { Ionicons } from '@expo/vector-icons';
 import { BIBLE_VERSES, BIBLE_BOOKS, BibleVerse, BibleBook } from './BibleVerses';
-import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import Svg, { Circle, Line, Text as SvgText, G } from 'react-native-svg';
+import { File as ExpoFile, Paths } from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import * as DocumentPicker from 'expo-document-picker';
 
 const { width: SW } = Dimensions.get('window');
 
-const C = {
-  primary: '#8B4513', primaryLight: '#A0522D', bg: '#FDFBF7', surface: '#FFFFFF', surfaceAlt: '#F5F2ED',
-  text: '#2C1810', textSec: '#5D4037', textMuted: '#8D7B6C', textOn: '#FFFFFF',
-  accent: '#D4A574', accentLight: '#E8D5B7', success: '#4A7C59', error: '#8B3A3A', warning: '#B8860B',
-  border: '#DED5C8', borderLight: '#EDE8E0', dreamBg: '#E8F4EA', revBg: '#FFF8E7', thoughtBg: '#F0F4F8', prayerBg: '#F5E6F0',
+const THEMES = {
+  light: {
+    primary: '#8B4513', primaryLight: '#A0522D', bg: '#FDFBF7', surface: '#FFFFFF', surfaceAlt: '#F5F2ED',
+    text: '#2C1810', textSec: '#5D4037', textMuted: '#8D7B6C', textOn: '#FFFFFF',
+    accent: '#D4A574', accentLight: '#E8D5B7', success: '#4A7C59', error: '#8B3A3A', warning: '#B8860B',
+    border: '#DED5C8', borderLight: '#EDE8E0', dreamBg: '#E8F4EA', revBg: '#FFF8E7', thoughtBg: '#F0F4F8', prayerBg: '#F5E6F0',
+    statusBar: 'dark-content' as const,
+  },
+  dark: {
+    primary: '#D4A574', primaryLight: '#E8D5B7', bg: '#1A1410', surface: '#2C241E', surfaceAlt: '#3A302A',
+    text: '#FDFBF7', textSec: '#C4B5A5', textMuted: '#8D7B6C', textOn: '#1A1410',
+    accent: '#8B4513', accentLight: '#3A302A', success: '#66BB6A', error: '#EF5350', warning: '#FFB74D',
+    border: '#4A3F35', borderLight: '#3A302A', dreamBg: '#1E2E1E', revBg: '#2E2A1A', thoughtBg: '#1E2228', prayerBg: '#2A1E2E',
+    statusBar: 'light-content' as const,
+  },
+  sepia: {
+    primary: '#6B4226', primaryLight: '#8B5E3C', bg: '#F4ECD8', surface: '#FAF5E8', surfaceAlt: '#EDE4D0',
+    text: '#3E2723', textSec: '#5D4037', textMuted: '#8D6E63', textOn: '#FAF5E8',
+    accent: '#A67B5B', accentLight: '#D7C4A5', success: '#558B2F', error: '#C62828', warning: '#F57F17',
+    border: '#C8B99A', borderLight: '#DDD2BC', dreamBg: '#E4ECD0', revBg: '#F5EDD0', thoughtBg: '#E4E8D8', prayerBg: '#EDE0E8',
+    statusBar: 'dark-content' as const,
+  },
 };
+
+type ThemeId = keyof typeof THEMES;
+type ThemeColors = Omit<typeof THEMES.light, 'statusBar'> & { statusBar: 'dark-content' | 'light-content' };
+
+const ThemeContext = React.createContext<{ theme: ThemeColors; themeId: ThemeId; setThemeId: (id: ThemeId) => void; fontScale: number; setFontScale: (s: number) => void; bibleFont: string; setBibleFont: (f: string) => void }>({
+  theme: THEMES.light, themeId: 'light', setThemeId: () => {}, fontScale: 1, setFontScale: () => {}, bibleFont: 'serif', setBibleFont: () => {},
+});
+const useTheme = () => React.useContext(ThemeContext);
+
+type StatusBarStyle = 'dark-content' | 'light-content';
+
+// Default colors for StyleSheet (static — overridden inline with theme)
+const C = THEMES.light;
 
 const VERSE_COLORS = [
   { id: 'gold', bg: '#FEF9F3', border: '#D4A574' }, { id: 'blue', bg: '#EBF5FF', border: '#5B9BD5' },
@@ -38,24 +72,54 @@ type Tab = 'journal' | 'bible' | 'calendar' | 'search' | 'settings';
 
 interface VerseHighlight { start: number; end: number; bold?: boolean; italic?: boolean; underline?: boolean; color?: string; }
 interface VerseData { book: string; chapter: number; verse: number; verseEnd?: number; text: string; fontFamily?: string; highlights?: VerseHighlight[]; }
-interface TStyle { bold?: boolean; italic?: boolean; underline?: boolean; fontSize?: string; }
-interface Block { id: string; type: 'text' | 'verse'; content: string; boxColor?: string; textStyle?: TStyle; }
-interface Entry { id: number; title: string; content: string; category: Cat; created_at: string; linked_verses: string; }
+interface TStyle { bold?: boolean; italic?: boolean; underline?: boolean; fontSize?: string; highlight?: string; }
+interface StyleRange { start: number; end: number; bold?: boolean; italic?: boolean; underline?: boolean; highlight?: string; }
+interface Block { id: string; type: 'text' | 'verse' | 'divider'; content: string; boxColor?: string; textStyle?: TStyle; ranges?: StyleRange[]; }
+
+const TEXT_HIGHLIGHTS = [
+  { id: 'yellow', bg: '#FFF9C4', label: 'Жёлтый' }, { id: 'green', bg: '#C8E6C9', label: 'Зелёный' },
+  { id: 'blue', bg: '#BBDEFB', label: 'Голубой' }, { id: 'pink', bg: '#F8BBD0', label: 'Розовый' },
+  { id: 'orange', bg: '#FFE0B2', label: 'Оранжевый' },
+];
+interface Entry { id: number; title: string; content: string; category: Cat; created_at: string; linked_verses: string; folder_id: number | null; }
 interface Reading { id: number; date: string; book: string; chapter: number; completed: boolean; }
 interface Fasting { id: number; start_date: string; end_date: string | null; notes: string; }
+interface Folder { id: number; name: string; color: string; icon: string; sort_order: number; }
 interface NavTarget { book: string; chapter: number; }
 
 let db: SQLite.SQLiteDatabase;
+let dbInitPromise: Promise<void> | null = null;
+
+const FOLDER_ICONS = ['folder', 'heart', 'star', 'flame', 'moon', 'sunny', 'book', 'bulb', 'leaf', 'diamond'] as const;
+const FOLDER_COLORS = [
+  { id: 'brown', color: '#8B4513' }, { id: 'blue', color: '#5B9BD5' }, { id: 'green', color: '#4A7C59' },
+  { id: 'purple', color: '#7B4B94' }, { id: 'red', color: '#8B3A3A' }, { id: 'teal', color: '#26A69A' },
+  { id: 'orange', color: '#B8860B' }, { id: 'pink', color: '#C2185B' },
+];
 
 const initDb = async () => {
-  db = await SQLite.openDatabaseAsync('divine_journal.db');
-  await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS entries (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, content TEXT NOT NULL, category TEXT DEFAULT 'мысль', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, linked_verses TEXT DEFAULT '[]');
-    CREATE TABLE IF NOT EXISTS bookmarks (id INTEGER PRIMARY KEY AUTOINCREMENT, verse_id TEXT NOT NULL UNIQUE, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
-    CREATE TABLE IF NOT EXISTS reading_plan (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, book TEXT NOT NULL, chapter INTEGER NOT NULL, completed BOOLEAN DEFAULT 0, UNIQUE(date, book, chapter));
-    CREATE TABLE IF NOT EXISTS daily_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL UNIQUE, notes TEXT DEFAULT '');
-    CREATE TABLE IF NOT EXISTS fasting (id INTEGER PRIMARY KEY AUTOINCREMENT, start_date TEXT NOT NULL, end_date TEXT, notes TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
-  `);
+  if (dbInitPromise) return dbInitPromise;
+  dbInitPromise = (async () => {
+    db = await SQLite.openDatabaseAsync('divine_journal.db');
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS entries (id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, content TEXT NOT NULL, category TEXT DEFAULT 'мысль', created_at DATETIME DEFAULT CURRENT_TIMESTAMP, linked_verses TEXT DEFAULT '[]');
+      CREATE TABLE IF NOT EXISTS bookmarks (id INTEGER PRIMARY KEY AUTOINCREMENT, verse_id TEXT NOT NULL UNIQUE, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+      CREATE TABLE IF NOT EXISTS reading_plan (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL, book TEXT NOT NULL, chapter INTEGER NOT NULL, completed BOOLEAN DEFAULT 0, UNIQUE(date, book, chapter));
+      CREATE TABLE IF NOT EXISTS daily_notes (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL UNIQUE, notes TEXT DEFAULT '');
+      CREATE TABLE IF NOT EXISTS fasting (id INTEGER PRIMARY KEY AUTOINCREMENT, start_date TEXT NOT NULL, end_date TEXT, notes TEXT DEFAULT '', created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+      CREATE TABLE IF NOT EXISTS folders (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, color TEXT DEFAULT '#8B4513', icon TEXT DEFAULT 'folder', sort_order INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
+      CREATE TABLE IF NOT EXISTS daily_verse_history (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL UNIQUE, verse_id TEXT NOT NULL, seen BOOLEAN DEFAULT 0);
+      CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT);
+    `);
+    try { await db.execAsync('ALTER TABLE entries ADD COLUMN folder_id INTEGER DEFAULT NULL'); } catch (e) {}
+  })();
+  return dbInitPromise;
+};
+
+const getDailyVerse = (date: Date): BibleVerse => {
+  const seed = date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate();
+  const idx = Math.abs((seed * 2654435761) | 0) % BIBLE_VERSES.length;
+  return BIBLE_VERSES[idx];
 };
 
 const genId = () => Math.random().toString(36).substr(2, 9);
@@ -86,25 +150,24 @@ const getMonthDays = (y: number, m: number) => {
 const catStyle = (c: Cat) => ({ сон: { bg: C.dreamBg, color: C.success }, откровение: { bg: C.revBg, color: C.warning }, мысль: { bg: C.thoughtBg, color: C.primary }, молитва: { bg: C.prayerBg, color: '#7B4B94' } }[c]);
 const catIcon = (c: Cat) => ({ сон: 'moon', откровение: 'flash', мысль: 'bulb', молитва: 'heart' }[c]);
 
-// Shared block renderers
-const renderVerseBlock = (b: Block) => { try { const d = JSON.parse(b.content) as VerseData, vc = getVColor(b.boxColor), font = getVFont(d.fontFamily), ref = d.verseEnd ? `${d.book} ${d.chapter}:${d.verse}-${d.verseEnd}` : `${d.book} ${d.chapter}:${d.verse}`; return <View style={[s.verseView, { backgroundColor: vc.bg, borderLeftColor: vc.border }]}><View style={s.verseHdr}><Ionicons name="book" size={16} color={vc.border} /><Text style={[s.verseRef, { color: vc.border }]}>{ref}</Text>{d.fontFamily && <Text style={s.verseFontLabel}>{font.name}</Text>}</View><HighlightedVerseText text={d.text} highlights={d.highlights} fontFamily={font.family} baseStyle={s.verseTxt} /></View>; } catch { return null; } };
-const renderTextBlock = (b: Block) => { if (!b.content) return null; const st: any = { ...s.viewTxt }; if (b.textStyle?.bold) st.fontWeight = 'bold'; if (b.textStyle?.italic) st.fontStyle = 'italic'; if (b.textStyle?.underline) st.textDecorationLine = 'underline'; if (b.textStyle?.fontSize) st.fontSize = getFSize(b.textStyle.fontSize); return <Text style={st}>{b.content}</Text>; };
-
 // SafeArea Wrapper Component
 const SafeAreaWrapper = ({ children }: { children: React.ReactNode }) => {
   const insets = useSafeAreaInsets();
+  const statusBarHeight = StatusBar.currentHeight || 0;
+  const topPad = Math.max(insets.top, statusBarHeight);
 
   return (
-    <View style={[s.container, {
-      paddingTop: insets.top,
-      paddingBottom: insets.bottom
+    <SafeAreaView style={[s.container, {
+      paddingTop: topPad,
     }]}>
       {children}
-    </View>
+    </SafeAreaView>
   );
 };
 
 const AppContent = () => {
+  const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const [tab, setTab] = useState<Tab>('journal');
   const [ready, setReady] = useState(false);
   const [navTarget, setNavTarget] = useState<NavTarget | null>(null);
@@ -119,30 +182,76 @@ const AppContent = () => {
   const clearNavTarget = () => setNavTarget(null);
 
   if (!ready) return (
-    <View style={s.loading}>
-      <StatusBar barStyle="dark-content" />
-      <Ionicons name="book" size={48} color={C.primary} />
-      <Text style={s.loadingTxt}>Загрузка...</Text>
+    <View style={[s.loading, { backgroundColor: theme.bg }]}>
+      <StatusBar barStyle={theme.statusBar} />
+      <Ionicons name="book" size={48} color={theme.primary} />
+      <Text style={[s.loadingTxt, { color: theme.textSec }]}>Загрузка...</Text>
     </View>
   );
 
   return (
     <>
-      <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
-      {tab === 'journal' && <JournalScreen />}
+      <StatusBar barStyle={theme.statusBar} backgroundColor={theme.bg} />
+      {tab === 'journal' && <JournalScreen onNavigate={navigateToBible} />}
       {tab === 'bible' && <BibleScreen navTarget={navTarget} clearNavTarget={clearNavTarget} />}
       {tab === 'calendar' && <CalendarScreen onNavigate={navigateToBible} />}
       {tab === 'search' && <SearchScreen onNavigate={navigateToBible} />}
       {tab === 'settings' && <SettingsScreen />}
-      <View style={s.tabBar}>
+      <View style={[s.tabBar, { backgroundColor: theme.surface, borderTopColor: theme.border, paddingBottom: Math.max(insets.bottom, 8) }]}>
         {[['journal','book','Дневник'],['bible','library','Библия'],['calendar','calendar','Календарь'],['search','search','Поиск'],['settings','settings','Ещё']].map(([t,i,l]) => (
           <TouchableOpacity key={t} style={s.tabBtn} onPress={() => setTab(t as Tab)}>
-            <Ionicons name={tab === t ? i : `${i}-outline`} size={22} color={tab === t ? C.primary : C.textMuted} />
-            <Text style={[s.tabLbl, tab === t && s.tabLblAct]}>{l}</Text>
+            <Ionicons name={tab === t ? i : `${i}-outline`} size={22} color={tab === t ? theme.primary : theme.textMuted} />
+            <Text style={[s.tabLbl, { color: theme.textMuted }, tab === t && { color: theme.primary, fontWeight: '600' }]}>{l}</Text>
           </TouchableOpacity>
         ))}
       </View>
     </>
+  );
+};
+
+const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
+  const [themeId, setThemeId] = useState<ThemeId>('light');
+  const [fontScale, setFontScale] = useState(1);
+  const [bibleFont, setBibleFont] = useState('serif');
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    const loadPrefs = async () => {
+      try {
+        await initDb();
+        const t = await db.getFirstAsync<{ value: string }>("SELECT value FROM app_settings WHERE key='theme'");
+        if (t && t.value in THEMES) setThemeId(t.value as ThemeId);
+        const fs = await db.getFirstAsync<{ value: string }>("SELECT value FROM app_settings WHERE key='fontScale'");
+        if (fs) setFontScale(parseFloat(fs.value));
+        const bf = await db.getFirstAsync<{ value: string }>("SELECT value FROM app_settings WHERE key='bibleFont'");
+        if (bf && VERSE_FONTS.some(f => f.id === bf.value)) setBibleFont(bf.value);
+      } catch (e) {}
+      setLoaded(true);
+    };
+    loadPrefs();
+  }, []);
+
+  const handleSetTheme = (id: ThemeId) => {
+    setThemeId(id);
+    db.runAsync("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('theme', ?)", [id]);
+  };
+
+  const handleSetFontScale = (s: number) => {
+    setFontScale(s);
+    db.runAsync("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('fontScale', ?)", [String(s)]);
+  };
+
+  const handleSetBibleFont = (f: string) => {
+    setBibleFont(f);
+    db.runAsync("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('bibleFont', ?)", [f]);
+  };
+
+  if (!loaded) return null;
+
+  return (
+    <ThemeContext.Provider value={{ theme: THEMES[themeId], themeId, setThemeId: handleSetTheme, fontScale, setFontScale: handleSetFontScale, bibleFont, setBibleFont: handleSetBibleFont }}>
+      {children}
+    </ThemeContext.Provider>
   );
 };
 
@@ -161,16 +270,19 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
-      <SafeAreaWrapper>
-        <AppContent />
-      </SafeAreaWrapper>
+      <ThemeProvider>
+        <SafeAreaWrapper>
+          <AppContent />
+        </SafeAreaWrapper>
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }
 
 // Rich Text Toolbar
-const RTToolbar = ({ style, onToggle, onSize }: { style: TStyle; onToggle: (k: keyof TStyle) => void; onSize: (id: string) => void }) => {
+const RTToolbar = ({ style, onToggle, onSize, onHighlight, onDivider }: { style: TStyle; onToggle: (k: keyof TStyle) => void; onSize: (id: string) => void; onHighlight: (color: string | null) => void; onDivider: () => void }) => {
   const [showSize, setShowSize] = useState(false);
+  const [showHl, setShowHl] = useState(false);
   return (
     <View style={s.toolbar}>
       {[['bold','B','bold'],['italic','I','italic'],['underline','U','underline']].map(([k,t,st]) => (
@@ -179,14 +291,29 @@ const RTToolbar = ({ style, onToggle, onSize }: { style: TStyle; onToggle: (k: k
         </TouchableOpacity>
       ))}
       <View style={s.toolDiv} />
-      <TouchableOpacity style={s.toolBtn} onPress={() => setShowSize(!showSize)}>
+      <TouchableOpacity style={s.toolBtn} onPress={() => { setShowSize(!showSize); setShowHl(false); }}>
         <Text style={s.toolTxt}>Aa</Text>
+      </TouchableOpacity>
+      <TouchableOpacity style={[s.toolBtn, style.highlight ? { backgroundColor: TEXT_HIGHLIGHTS.find(h => h.id === style.highlight)?.bg } : undefined]} onPress={() => { setShowHl(!showHl); setShowSize(false); }}>
+        <Ionicons name="color-fill" size={18} color={style.highlight ? C.text : C.textSec} />
+      </TouchableOpacity>
+      <View style={s.toolDiv} />
+      <TouchableOpacity style={s.toolBtn} onPress={onDivider}>
+        <Ionicons name="remove" size={18} color={C.textSec} />
       </TouchableOpacity>
       {showSize && <View style={s.dropdown}>{FONT_SIZES.map(f => (
         <TouchableOpacity key={f.id} style={s.dropItem} onPress={() => { onSize(f.id); setShowSize(false); }}>
           <Text style={{ fontSize: f.sz - 4 }}>{f.sz}px</Text>
         </TouchableOpacity>
       ))}</View>}
+      {showHl && <View style={[s.dropdown, { right: 50, flexDirection: 'row', flexWrap: 'wrap', gap: 6, padding: 10, minWidth: 160 }]}>
+        <TouchableOpacity style={{ padding: 6 }} onPress={() => { onHighlight(null); setShowHl(false); }}>
+          <Ionicons name="close-circle" size={22} color={C.textMuted} />
+        </TouchableOpacity>
+        {TEXT_HIGHLIGHTS.map(h => (
+          <TouchableOpacity key={h.id} style={[{ width: 30, height: 30, borderRadius: 15, backgroundColor: h.bg, justifyContent: 'center', alignItems: 'center' }, style.highlight === h.id && { borderWidth: 2, borderColor: C.primary }]} onPress={() => { onHighlight(h.id); setShowHl(false); }} />
+        ))}
+      </View>}
     </View>
   );
 };
@@ -245,7 +372,7 @@ const VerseFormatModal = ({ visible, onClose, verseData, onSave }: { visible: bo
   const handleSave = () => { onSave({ ...verseData, fontFamily: fontId, highlights: highlights.length > 0 ? highlights : undefined }); onClose(); };
 
   return (
-    <Modal visible={visible} animationType="slide"><SafeAreaView style={s.modal}>
+    <Modal visible={visible} animationType="slide" statusBarTranslucent><SafeAreaView style={[s.modal, { paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }]}>
       <View style={s.modalHdr}><TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity><Text style={s.modalTitle}>Форматирование</Text><TouchableOpacity onPress={handleSave}><Text style={s.saveTxt}>Готово</Text></TouchableOpacity></View>
       <ScrollView style={s.modalBody}>
         <Text style={s.verseRef}>{ref}</Text>
@@ -291,7 +418,9 @@ const VerseFormatModal = ({ visible, onClose, verseData, onSave }: { visible: bo
 };
 
 // Journal Screen
-const JournalScreen = () => {
+const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: number) => void }) => {
+  const { theme, bibleFont } = useTheme();
+  const bibleFontFamily = getVFont(bibleFont).family;
   const [entries, setEntries] = useState<Entry[]>([]);
   const [modal, setModal] = useState(false);
   const [editing, setEditing] = useState<Entry | null>(null);
@@ -306,11 +435,79 @@ const JournalScreen = () => {
   const [tStyle, setTStyle] = useState<TStyle>({});
   const [fasts, setFasts] = useState<Fasting[]>([]);
   const [formatVerse, setFormatVerse] = useState<{ blockId: string; data: VerseData } | null>(null);
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
+  const scrollRef = useRef<ScrollView>(null);
+  const blockPositions = useRef<Record<string, number>>({});
+  const [sel, setSel] = useState<{start: number; end: number}>({start: 0, end: 0});
+  // Folder state
+  const [folders, setFolders] = useState<Folder[]>([]);
+  const [activeFolder, setActiveFolder] = useState<number | null>(null);
+  const [entryFolder, setEntryFolder] = useState<number | null>(null);
+  const [showFolderMgmt, setShowFolderMgmt] = useState(false);
+  const [folderName, setFolderName] = useState('');
+  const [folderColor, setFolderColor] = useState(FOLDER_COLORS[0].color);
+  const [folderIcon, setFolderIcon] = useState<string>('folder');
+  const [editingFolder, setEditingFolder] = useState<Folder | null>(null);
+  // Daily verse state
+  const [dailyVerse, setDailyVerse] = useState<BibleVerse | null>(null);
+  const [verseStreak, setVerseStreak] = useState(0);
+  const [showDailyVerse, setShowDailyVerse] = useState(true);
 
-  const load = useCallback(async () => { 
-    setEntries(await db.getAllAsync<Entry>('SELECT * FROM entries ORDER BY created_at DESC')); 
-    setFasts(await db.getAllAsync<Fasting>('SELECT * FROM fasting'));
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setKeyboardVisible(false));
+    return () => { showSub.remove(); hideSub.remove(); };
   }, []);
+
+  useEffect(() => {
+    const today = new Date();
+    const verse = getDailyVerse(today);
+    setDailyVerse(verse);
+    const todayStr = fmtDate(today);
+    db.runAsync('INSERT OR IGNORE INTO daily_verse_history (date, verse_id, seen) VALUES (?,?,1)', [todayStr, verse.id]);
+    db.getAllAsync<{ date: string }>('SELECT date FROM daily_verse_history WHERE seen=1 ORDER BY date DESC')
+      .then(rows => {
+        let streak = 0;
+        let expected = todayStr;
+        for (const r of rows) {
+          if (r.date === expected) { streak++; const d = new Date(expected); d.setDate(d.getDate() - 1); expected = fmtDate(d); }
+          else break;
+        }
+        setVerseStreak(streak);
+      });
+  }, []);
+
+  const load = useCallback(async () => {
+    setEntries(await db.getAllAsync<Entry>('SELECT * FROM entries ORDER BY created_at DESC'));
+    setFasts(await db.getAllAsync<Fasting>('SELECT * FROM fasting'));
+    setFolders(await db.getAllAsync<Folder>('SELECT * FROM folders ORDER BY sort_order ASC'));
+  }, []);
+
+  const folderEntryCount = useCallback((folderId: number) => entries.filter(e => e.folder_id === folderId).length, [entries]);
+
+  const saveFolder = async () => {
+    if (!folderName.trim()) return Alert.alert('Ошибка', 'Введите название папки');
+    if (editingFolder) {
+      await db.runAsync('UPDATE folders SET name=?, color=?, icon=? WHERE id=?', [folderName.trim(), folderColor, folderIcon, editingFolder.id]);
+    } else {
+      const maxOrder = folders.length > 0 ? Math.max(...folders.map(f => f.sort_order)) + 1 : 0;
+      await db.runAsync('INSERT INTO folders (name, color, icon, sort_order) VALUES (?,?,?,?)', [folderName.trim(), folderColor, folderIcon, maxOrder]);
+    }
+    setFolderName(''); setFolderColor(FOLDER_COLORS[0].color); setFolderIcon('folder'); setEditingFolder(null);
+    load();
+  };
+
+  const delFolder = (f: Folder) => Alert.alert(`Удалить «${f.name}»?`, 'Записи не будут удалены', [
+    { text: 'Отмена', style: 'cancel' },
+    { text: 'Удалить', style: 'destructive', onPress: async () => {
+      await db.runAsync('UPDATE entries SET folder_id=NULL WHERE folder_id=?', [f.id]);
+      await db.runAsync('DELETE FROM folders WHERE id=?', [f.id]);
+      if (activeFolder === f.id) setActiveFolder(null);
+      load();
+    }},
+  ]);
+
+  const startEditFolder = (f: Folder) => { setEditingFolder(f); setFolderName(f.name); setFolderColor(f.color); setFolderIcon(f.icon); };
   useEffect(() => { load(); }, [load]);
 
   const isFastingEntry = (e: Entry) => {
@@ -324,26 +521,89 @@ const JournalScreen = () => {
 
   const save = async () => {
     if (!title.trim()) return Alert.alert('Ошибка', 'Введите заголовок');
-    const cJson = JSON.stringify(blocks);
-    const linked = blocks.filter(b => b.type === 'verse').map(b => { try { const d = JSON.parse(b.content); return { book: d.book, chapter: d.chapter, verse: d.verse }; } catch { return null; } }).filter(Boolean);
-    if (editing) await db.runAsync('UPDATE entries SET title=?, content=?, category=?, linked_verses=? WHERE id=?', [title, cJson, cat, JSON.stringify(linked), editing.id]);
-    else await db.runAsync('INSERT INTO entries (title, content, category, linked_verses) VALUES (?,?,?,?)', [title, cJson, cat, JSON.stringify(linked)]);
-    reset(); load();
+    try {
+      const cJson = JSON.stringify(blocks);
+      const linked = blocks.filter(b => b.type === 'verse').map(b => { try { const d = JSON.parse(b.content); return { book: d.book, chapter: d.chapter, verse: d.verse }; } catch { return null; } }).filter(Boolean);
+      if (editing) await db.runAsync('UPDATE entries SET title=?, content=?, category=?, linked_verses=?, folder_id=? WHERE id=?', [title, cJson, cat, JSON.stringify(linked), entryFolder, editing.id]);
+      else await db.runAsync('INSERT INTO entries (title, content, category, linked_verses, folder_id) VALUES (?,?,?,?,?)', [title, cJson, cat, JSON.stringify(linked), entryFolder]);
+      reset(); load();
+    } catch (e: any) { Alert.alert('Ошибка сохранения', e?.message || 'Не удалось сохранить'); }
   };
 
   const del = (id: number) => Alert.alert('Удалить?', '', [{ text: 'Отмена', style: 'cancel' }, { text: 'Удалить', style: 'destructive', onPress: async () => { await db.runAsync('DELETE FROM entries WHERE id=?', [id]); load(); setViewing(null); }}]);
 
   const openEdit = (e?: Entry) => {
-    if (e) { setEditing(e); setTitle(e.title); setBlocks(parseBlocks(e.content)); setCat(e.category); }
-    else { reset(); setBlocks([{ id: genId(), type: 'text', content: '' }]); }
+    if (e) { setEditing(e); setTitle(e.title); setBlocks(parseBlocks(e.content)); setCat(e.category); setEntryFolder(e.folder_id); }
+    else { reset(); setBlocks([{ id: genId(), type: 'text', content: '' }]); setEntryFolder(activeFolder); }
     setViewing(null); setModal(true);
   };
 
-  const reset = () => { setEditing(null); setTitle(''); setBlocks([{ id: genId(), type: 'text', content: '' }]); setCat('мысль'); setModal(false); setActiveId(null); setTStyle({}); };
+  const reset = () => { setEditing(null); setTitle(''); setBlocks([{ id: genId(), type: 'text', content: '' }]); setCat('мысль'); setModal(false); setActiveId(null); setTStyle({}); setEntryFolder(null); };
 
-  const updateBlock = (id: string, txt: string) => setBlocks(bs => bs.map(b => b.id === id ? { ...b, content: txt, textStyle: tStyle } : b));
-  const toggleStyle = (k: keyof TStyle) => { const nv = !tStyle[k]; setTStyle(p => ({ ...p, [k]: nv })); if (activeId) setBlocks(bs => bs.map(b => b.id === activeId ? { ...b, textStyle: { ...b.textStyle, [k]: nv } } : b)); };
+  const updateBlock = (id: string, txt: string) => setBlocks(bs => bs.map(b => {
+    if (b.id !== id) return b;
+    const upd: Block = { ...b, content: txt };
+    if (b.ranges?.length) {
+      const delta = txt.length - b.content.length;
+      if (delta !== 0) {
+        const cp = Math.max(0, sel.start - Math.max(0, delta));
+        upd.ranges = b.ranges.map(r => {
+          if (cp >= r.end) return r;
+          if (cp <= r.start) return { ...r, start: r.start + delta, end: r.end + delta };
+          return { ...r, end: Math.max(r.start + 1, r.end + delta) };
+        }).filter(r => r.start >= 0 && r.end <= txt.length && r.start < r.end);
+      }
+    }
+    return upd;
+  }));
+  const toggleStyle = (k: keyof TStyle) => {
+    if (activeId && sel.start < sel.end && (k === 'bold' || k === 'italic' || k === 'underline')) {
+      setBlocks(bs => bs.map(b => {
+        if (b.id !== activeId) return b;
+        const ranges = [...(b.ranges || [])];
+        let fullyCovered = true;
+        for (let i = sel.start; i < sel.end && fullyCovered; i++) {
+          if (!ranges.some(r => r[k] && r.start <= i && r.end > i)) fullyCovered = false;
+        }
+        if (fullyCovered && ranges.length > 0) {
+          const nr: StyleRange[] = [];
+          for (const r of ranges) {
+            if (!r[k] || r.end <= sel.start || r.start >= sel.end) { nr.push(r); continue; }
+            if (r.start < sel.start) nr.push({ ...r, end: sel.start });
+            if (r.end > sel.end) nr.push({ ...r, start: sel.end });
+          }
+          return { ...b, ranges: nr };
+        }
+        return { ...b, ranges: [...ranges, { start: sel.start, end: sel.end, [k]: true }] };
+      }));
+      setTStyle(p => ({ ...p, [k]: !p[k] }));
+    } else {
+      const nv = !tStyle[k]; setTStyle(p => ({ ...p, [k]: nv }));
+      if (activeId) setBlocks(bs => bs.map(b => b.id === activeId ? { ...b, textStyle: { ...b.textStyle, [k]: nv } } : b));
+    }
+  };
   const setFontSize = (sz: string) => { setTStyle(p => ({ ...p, fontSize: sz })); if (activeId) setBlocks(bs => bs.map(b => b.id === activeId ? { ...b, textStyle: { ...b.textStyle, fontSize: sz } } : b)); };
+  const setHighlight = (color: string | null) => {
+    if (activeId && sel.start < sel.end) {
+      setBlocks(bs => bs.map(b => {
+        if (b.id !== activeId) return b;
+        const ranges = [...(b.ranges || [])];
+        if (color) return { ...b, ranges: [...ranges, { start: sel.start, end: sel.end, highlight: color }] };
+        const nr: StyleRange[] = [];
+        for (const r of ranges) {
+          if (!r.highlight || r.end <= sel.start || r.start >= sel.end) { nr.push(r); continue; }
+          if (r.start < sel.start) nr.push({ ...r, end: sel.start });
+          if (r.end > sel.end) nr.push({ ...r, start: sel.end });
+        }
+        return { ...b, ranges: nr };
+      }));
+    } else {
+      if (activeId) setBlocks(bs => bs.map(b => b.id === activeId ? { ...b, textStyle: { ...b.textStyle, highlight: color || undefined } } : b));
+    }
+    setTStyle(p => ({ ...p, highlight: color || undefined }));
+  };
+  const addDivider = () => { const div: Block = { id: genId(), type: 'divider', content: '' }; if (activeId) { setBlocks(bs => { const i = bs.findIndex(b => b.id === activeId); const n = [...bs]; n.splice(i + 1, 0, div); return n; }); } else { setBlocks(bs => [...bs, div]); } };
+  const moveBlock = (idx: number, dir: -1 | 1) => setBlocks(bs => { const n = [...bs]; const t = idx + dir; if (t < 0 || t >= n.length) return bs; [n[idx], n[t]] = [n[t], n[idx]]; return n; });
 
   const addVerses = (vs: BibleVerse[], col: string = 'gold') => {
     const sorted = [...vs].sort((a, b) => a.book.localeCompare(b.book) || a.chapter - b.chapter || a.verse - b.verse);
@@ -377,17 +637,72 @@ const JournalScreen = () => {
   const preview = (c: string) => parseBlocks(c).filter(b => b.type === 'text').map(b => b.content).join(' ').substring(0, 100);
   const vCount = (c: string) => parseBlocks(c).filter(b => b.type === 'verse').length;
 
-  const renderVerse = renderVerseBlock;
-  const renderText = renderTextBlock;
+  const renderVerse = (b: Block) => { try { const d = JSON.parse(b.content) as VerseData, vc = getVColor(b.boxColor), font = getVFont(d.fontFamily), ref = d.verseEnd ? `${d.book} ${d.chapter}:${d.verse}-${d.verseEnd}` : `${d.book} ${d.chapter}:${d.verse}`; return <View style={[s.verseView, { backgroundColor: vc.bg, borderLeftColor: vc.border }]}><View style={s.verseHdr}><Ionicons name="book" size={16} color={vc.border} /><Text style={[s.verseRef, { color: vc.border }]}>{ref}</Text>{d.fontFamily && <Text style={s.verseFontLabel}>{font.name}</Text>}</View><HighlightedVerseText text={d.text} highlights={d.highlights} fontFamily={font.family} baseStyle={s.verseTxt} /></View>; } catch { return null; } };
+
+  const renderText = (b: Block) => {
+    if (!b.content) return null;
+    const base: any = { ...s.viewTxt, color: theme.text };
+    if (b.textStyle?.fontSize) base.fontSize = getFSize(b.textStyle.fontSize);
+    if (b.textStyle?.highlight) { const hl = TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight); if (hl) base.backgroundColor = hl.bg; }
+    if (!b.ranges?.length) {
+      if (b.textStyle?.bold) base.fontWeight = 'bold'; if (b.textStyle?.italic) base.fontStyle = 'italic'; if (b.textStyle?.underline) base.textDecorationLine = 'underline';
+      return <Text style={base}>{b.content}</Text>;
+    }
+    const len = b.content.length, pts = new Set<number>([0, len]);
+    b.ranges.forEach(r => { pts.add(Math.max(0, r.start)); pts.add(Math.min(len, r.end)); });
+    const sorted = Array.from(pts).sort((a, c) => a - c);
+    const parts: React.ReactNode[] = [];
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const ps = sorted[i], pe = sorted[i + 1];
+      const st: any = { ...base };
+      if (b.textStyle?.bold) st.fontWeight = 'bold'; if (b.textStyle?.italic) st.fontStyle = 'italic'; if (b.textStyle?.underline) st.textDecorationLine = 'underline';
+      for (const r of b.ranges) { if (r.start <= ps && r.end >= pe) { if (r.bold) st.fontWeight = 'bold'; if (r.italic) st.fontStyle = 'italic'; if (r.underline) st.textDecorationLine = 'underline'; if (r.highlight) { const hl = TEXT_HIGHLIGHTS.find(h => h.id === r.highlight); if (hl) st.backgroundColor = hl.bg; } } }
+      parts.push(<Text key={i} style={st}>{b.content.slice(ps, pe)}</Text>);
+    }
+    return <Text>{parts}</Text>;
+  };
+
+  const filteredEntries = activeFolder ? entries.filter(e => e.folder_id === activeFolder) : entries;
+  const getFolderName = (id: number | null) => { if (!id) return null; const f = folders.find(x => x.id === id); return f || null; };
 
   return (
-    <View style={s.screen}>
-      <View style={s.header}><Text style={s.headerTxt}>📖 Духовный дневник</Text><TouchableOpacity style={s.addBtn} onPress={() => openEdit()}><Ionicons name="add" size={28} color={C.textOn} /></TouchableOpacity></View>
-      <FlatList data={entries} keyExtractor={i => i.id.toString()} renderItem={({ item }) => {
+    <View style={[s.screen, { paddingBottom: 80, backgroundColor: theme.bg }]}>
+      <View style={s.header}><Text style={[s.headerTxt, { color: theme.text }]}>📖 Духовный дневник</Text><TouchableOpacity style={[s.addBtn, { backgroundColor: theme.primary }]} onPress={() => openEdit()}><Ionicons name="add" size={28} color={theme.textOn} /></TouchableOpacity></View>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.folderBar} contentContainerStyle={{ paddingHorizontal: 12, gap: 8, alignItems: 'center', paddingVertical: 4 }}>
+        <TouchableOpacity style={[s.folderChip, !activeFolder && s.folderChipAct]} onPress={() => setActiveFolder(null)}>
+          <Ionicons name="albums" size={14} color={!activeFolder ? theme.textOn : theme.textSec} />
+          <Text style={[s.folderChipTxt, { color: theme.textSec }, !activeFolder && s.folderChipTxtAct]}>Все ({entries.length})</Text>
+        </TouchableOpacity>
+        {folders.map(f => (
+          <TouchableOpacity key={f.id} style={[s.folderChip, { borderColor: theme.border }, activeFolder === f.id && { backgroundColor: f.color, borderColor: f.color }]} onPress={() => setActiveFolder(activeFolder === f.id ? null : f.id)}>
+            <Ionicons name={f.icon as any} size={14} color={activeFolder === f.id ? theme.textOn : f.color} />
+            <Text style={[s.folderChipTxt, activeFolder === f.id && s.folderChipTxtAct]}>{f.name} ({folderEntryCount(f.id)})</Text>
+          </TouchableOpacity>
+        ))}
+        <TouchableOpacity style={[s.folderChip, { borderColor: theme.primary, borderWidth: 1.5, backgroundColor: theme.primary + '10', paddingHorizontal: 16 }]} onPress={() => { setEditingFolder(null); setFolderName(''); setFolderColor(FOLDER_COLORS[0].color); setFolderIcon('folder'); setShowFolderMgmt(true); }}>
+          <Ionicons name="add-circle-outline" size={16} color={theme.primary} />
+          <Text style={[s.folderChipTxt, { color: theme.primary, fontWeight: '600' }]}>Папка</Text>
+        </TouchableOpacity>
+      </ScrollView>
+      {dailyVerse && showDailyVerse && <View style={s.dailyVerse}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text style={s.dailyVerseLbl}>Стих дня</Text>
+          <TouchableOpacity onPress={() => setShowDailyVerse(false)}><Ionicons name="close" size={18} color={C.textMuted} /></TouchableOpacity>
+        </View>
+        <Text style={[s.dailyVerseTxt, { fontFamily: bibleFontFamily }]}>"{dailyVerse.text}"</Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+          <Text style={s.dailyVerseRef}>— {dailyVerse.book} {dailyVerse.chapter}:{dailyVerse.verse}</Text>
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            {verseStreak > 1 && <View style={s.streakBadge}><Ionicons name="flame" size={14} color={C.warning} /><Text style={{ fontSize: 12, color: C.warning, fontWeight: '600' }}>{verseStreak}</Text></View>}
+            <TouchableOpacity onPress={() => onNavigate(dailyVerse.book, dailyVerse.chapter)}><Ionicons name="book-outline" size={20} color={C.primary} /></TouchableOpacity>
+          </View>
+        </View>
+      </View>}
+      <FlatList data={filteredEntries} keyExtractor={i => i.id.toString()} renderItem={({ item }) => {
         const cs = catStyle(item.category), vc = vCount(item.content), pv = preview(item.content);
         const isFasting = isFastingEntry(item);
         return (
-          <TouchableOpacity style={[s.card, { borderLeftColor: cs.color }, isFasting && { backgroundColor: '#F9F0FA', borderLeftColor: '#9C27B0' }]} onPress={() => setViewing(item)} onLongPress={() => del(item.id)}>
+          <TouchableOpacity style={[s.card, { borderLeftColor: cs.color, backgroundColor: theme.surface }, isFasting && { backgroundColor: theme.prayerBg, borderLeftColor: '#9C27B0' }]} onPress={() => setViewing(item)} onLongPress={() => del(item.id)}>
             <View style={s.cardHdr}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <View style={[s.badge, { backgroundColor: cs.bg }]}><Ionicons name={catIcon(item.category)} size={14} color={cs.color} /><Text style={[s.badgeTxt, { color: cs.color }]}>{item.category}</Text></View>
@@ -395,33 +710,46 @@ const JournalScreen = () => {
               </View>
               <Text style={s.cardDate}>{new Date(item.created_at).toLocaleDateString('ru-RU')}</Text>
             </View>
-            <Text style={s.cardTitle}>{item.title}</Text>
-            {pv ? <Text style={s.cardPrev} numberOfLines={2}>{pv}</Text> : null}
-            {vc > 0 && <View style={s.tags}><View style={s.tag}><Ionicons name="book" size={10} color={C.primary} /><Text style={s.tagTxt}>{vc} стих{vc > 1 ? (vc < 5 ? 'а' : 'ов') : ''}</Text></View></View>}
+            <Text style={[s.cardTitle, { color: theme.text }]}>{item.title}</Text>
+            {pv ? <Text style={[s.cardPrev, { color: theme.textSec }]} numberOfLines={2}>{pv}</Text> : null}
+            {(vc > 0 || item.folder_id) && <View style={s.tags}>{item.folder_id && (() => { const fl = getFolderName(item.folder_id); return fl ? <View style={[s.tag, { backgroundColor: fl.color + '20' }]}><Ionicons name={fl.icon as any} size={10} color={fl.color} /><Text style={[s.tagTxt, { color: fl.color }]}>{fl.name}</Text></View> : null; })()}{vc > 0 && <View style={s.tag}><Ionicons name="book" size={10} color={C.primary} /><Text style={s.tagTxt}>{vc} стих{vc > 1 ? (vc < 5 ? 'а' : 'ов') : ''}</Text></View>}</View>}
           </TouchableOpacity>
         );
       }} contentContainerStyle={s.list} ListEmptyComponent={<View style={s.empty}><Ionicons name="journal-outline" size={64} color={C.border} /><Text style={s.emptyTxt}>Записей пока нет</Text></View>} />
 
-      <Modal visible={viewing !== null} animationType="slide">
-        <SafeAreaView style={s.modal}>
-          <View style={s.modalHdr}><TouchableOpacity onPress={() => setViewing(null)}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity><Text style={s.modalTitle} numberOfLines={1}>{viewing?.title}</Text><TouchableOpacity onPress={() => viewing && openEdit(viewing)}><Ionicons name="create-outline" size={24} color={C.primary} /></TouchableOpacity></View>
-          <ScrollView style={s.viewContent} contentContainerStyle={{ paddingBottom: 20 }}>{viewing && <><View style={s.viewMeta}><View style={[s.badge, { backgroundColor: catStyle(viewing.category).bg }]}><Ionicons name={catIcon(viewing.category)} size={14} color={catStyle(viewing.category).color} /><Text style={[s.badgeTxt, { color: catStyle(viewing.category).color }]}>{viewing.category}</Text></View><Text style={s.viewDate}>{new Date(viewing.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text></View>{parseBlocks(viewing.content).map(b => <View key={b.id}>{b.type === 'text' ? renderText(b) : renderVerse(b)}</View>)}</>}</ScrollView>
+      <Modal visible={viewing !== null} animationType="slide" statusBarTranslucent>
+        <SafeAreaView style={[s.modal, { backgroundColor: theme.bg, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }]}>
+          <View style={[s.modalHdr, { borderBottomColor: theme.border }]}><TouchableOpacity onPress={() => setViewing(null)}><Ionicons name="close" size={24} color={theme.text} /></TouchableOpacity><Text style={[s.modalTitle, { color: theme.text }]} numberOfLines={1}>{viewing?.title}</Text><TouchableOpacity onPress={() => viewing && openEdit(viewing)}><Ionicons name="create-outline" size={24} color={theme.primary} /></TouchableOpacity></View>
+          <ScrollView style={s.viewContent}>{viewing && <><View style={s.viewMeta}><View style={[s.badge, { backgroundColor: catStyle(viewing.category).bg }]}><Ionicons name={catIcon(viewing.category)} size={14} color={catStyle(viewing.category).color} /><Text style={[s.badgeTxt, { color: catStyle(viewing.category).color }]}>{viewing.category}</Text></View><Text style={s.viewDate}>{new Date(viewing.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text></View>{parseBlocks(viewing.content).map(b => <View key={b.id}>{b.type === 'text' ? renderText(b) : renderVerse(b)}</View>)}</>}</ScrollView>
           <TouchableOpacity style={s.delBtn} onPress={() => viewing && del(viewing.id)}><Ionicons name="trash-outline" size={20} color={C.error} /><Text style={s.delTxt}>Удалить</Text></TouchableOpacity>
         </SafeAreaView>
       </Modal>
 
-      <Modal visible={modal} animationType="slide">
-        <SafeAreaView style={s.modal}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-          <View style={s.modalHdr}><TouchableOpacity onPress={reset}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity><Text style={s.modalTitle}>{editing ? 'Редактировать' : 'Новая запись'}</Text><TouchableOpacity onPress={save}><Text style={s.saveTxt}>Сохранить</Text></TouchableOpacity></View>
-          {activeId && <RTToolbar style={tStyle} onToggle={toggleStyle} onSize={setFontSize} />}
-          <ScrollView style={s.modalBody}>
+      <Modal visible={modal} animationType="slide" statusBarTranslucent>
+        <SafeAreaView style={[s.modal, { backgroundColor: theme.bg, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }]}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+          <View style={[s.modalHdr, { borderBottomColor: theme.border }]}><TouchableOpacity onPress={reset}><Ionicons name="close" size={24} color={theme.text} /></TouchableOpacity><Text style={[s.modalTitle, { color: theme.text }]}>{editing ? 'Редактировать' : 'Новая запись'}</Text><TouchableOpacity onPress={save}><Text style={[s.saveTxt, { color: theme.primary }]}>Сохранить</Text></TouchableOpacity></View>
+          <ScrollView ref={scrollRef} style={s.modalBody} keyboardShouldPersistTaps="handled" scrollEventThrottle={16}>
             <Text style={s.label}>Категория</Text>
             <View style={s.catPicker}>{(['сон','откровение','мысль','молитва'] as Cat[]).map(c => { const cs = catStyle(c); return <TouchableOpacity key={c} style={[s.catOpt, { backgroundColor: cs.bg }, cat === c && { borderColor: cs.color }]} onPress={() => setCat(c)}><Ionicons name={catIcon(c)} size={16} color={cs.color} /><Text style={[s.catOptTxt, { color: cs.color }]}>{c}</Text></TouchableOpacity>; })}</View>
+            {folders.length > 0 && <><Text style={s.label}>Папка</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+              <TouchableOpacity style={[s.folderChip, !entryFolder && s.folderChipAct]} onPress={() => setEntryFolder(null)}>
+                <Text style={[s.folderChipTxt, !entryFolder && s.folderChipTxtAct]}>Без папки</Text>
+              </TouchableOpacity>
+              {folders.map(f => (
+                <TouchableOpacity key={f.id} style={[s.folderChip, entryFolder === f.id && { backgroundColor: f.color, borderColor: f.color }]} onPress={() => setEntryFolder(f.id)}>
+                  <Ionicons name={f.icon as any} size={14} color={entryFolder === f.id ? C.textOn : f.color} />
+                  <Text style={[s.folderChipTxt, entryFolder === f.id && s.folderChipTxtAct]}>{f.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView></>}
             <Text style={s.label}>Заголовок</Text>
             <TextInput style={s.input} value={title} onChangeText={setTitle} placeholder="Название..." placeholderTextColor={C.textMuted} />
             <Text style={s.label}>Содержание</Text>
-            {blocks.map((b, i) => <View key={b.id}>{b.type === 'text' ? <View><TextInput style={[s.input, s.textArea, activeId === b.id && s.inputAct, b.textStyle?.fontSize && { fontSize: getFSize(b.textStyle.fontSize) }, b.textStyle?.bold && { fontWeight: 'bold' }, b.textStyle?.italic && { fontStyle: 'italic' }]} value={b.content} onChangeText={t => updateBlock(b.id, t)} onFocus={() => { setActiveId(b.id); setTStyle(b.textStyle || {}); }} placeholder={i === 0 ? "Начните писать..." : "Продолжайте..."} placeholderTextColor={C.textMuted} multiline textAlignVertical="top" /><TouchableOpacity style={s.insertBtn} onPress={() => { setInsertId(b.id); setVpick(true); }}><Ionicons name="add-circle" size={18} color={C.primary} /><Text style={s.insertTxt}>Вставить стихи</Text></TouchableOpacity></View> : <View style={[s.verseEdit, { backgroundColor: getVColor(b.boxColor).bg, borderLeftColor: getVColor(b.boxColor).border }]}>{(() => { try { const d = JSON.parse(b.content) as VerseData; const font = getVFont(d.fontFamily); const ref = d.verseEnd ? `${d.book} ${d.chapter}:${d.verse}-${d.verseEnd}` : `${d.book} ${d.chapter}:${d.verse}`; return <><View style={s.verseEditHdr}><View style={s.verseEditLeft}><Ionicons name="book" size={16} color={getVColor(b.boxColor).border} /><Text style={[s.verseRef, { color: getVColor(b.boxColor).border }]}>{ref}</Text>{d.fontFamily && <Text style={s.verseFontLabel}>{font.name}</Text>}</View><View style={s.verseEditActs}><TouchableOpacity onPress={() => openVerseFormat(b.id)}><Ionicons name="text" size={20} color={getVColor(b.boxColor).border} /></TouchableOpacity><TouchableOpacity onPress={() => setColorPick(b.id)}><Ionicons name="color-palette" size={20} color={getVColor(b.boxColor).border} /></TouchableOpacity><TouchableOpacity onPress={() => removeBlock(b.id)}><Ionicons name="close-circle" size={22} color={C.error} /></TouchableOpacity></View></View><HighlightedVerseText text={d.text} highlights={d.highlights} fontFamily={font.family} baseStyle={s.verseEditTxt} /></>; } catch { return null; } })()}</View>}</View>)}
+            {blocks.map((b, i) => <View key={b.id} onLayout={(e) => { blockPositions.current[b.id] = e.nativeEvent.layout.y; }}>{b.type === 'divider' ? <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 8, gap: 8 }}><View style={{ flex: 1, height: 1, backgroundColor: C.border }} /><View style={{ flexDirection: 'row', gap: 4 }}>{i > 0 && <TouchableOpacity onPress={() => moveBlock(i, -1)}><Ionicons name="arrow-up" size={16} color={C.textMuted} /></TouchableOpacity>}{i < blocks.length - 1 && <TouchableOpacity onPress={() => moveBlock(i, 1)}><Ionicons name="arrow-down" size={16} color={C.textMuted} /></TouchableOpacity>}<TouchableOpacity onPress={() => removeBlock(b.id)}><Ionicons name="close" size={16} color={C.error} /></TouchableOpacity></View></View> : b.type === 'text' ? <View style={b.textStyle?.highlight ? { borderLeftWidth: 4, borderLeftColor: TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight)?.bg, borderRadius: 8, marginBottom: 4, paddingLeft: 4 } : undefined}><View style={{ flexDirection: 'row', alignItems: 'center' }}><View style={{ flex: 1 }}><TextInput style={[s.input, s.textArea, activeId === b.id && s.inputAct, b.textStyle?.fontSize && { fontSize: getFSize(b.textStyle.fontSize) }, b.textStyle?.bold && { fontWeight: 'bold' }, b.textStyle?.italic && { fontStyle: 'italic' }, b.textStyle?.underline && { textDecorationLine: 'underline' as const }, b.textStyle?.highlight && { backgroundColor: TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight)?.bg }]} value={b.content} onChangeText={t => updateBlock(b.id, t)} onSelectionChange={(e) => setSel(e.nativeEvent.selection)} onFocus={() => { setActiveId(b.id); setTStyle(b.textStyle || {}); setSel({start: 0, end: 0}); setTimeout(() => { const y = blockPositions.current[b.id]; if (y !== undefined && scrollRef.current) { scrollRef.current.scrollTo({ y: Math.max(0, y - 100), animated: true }); } }, 150); }} placeholder={i === 0 ? "Начните писать..." : "Продолжайте..."} placeholderTextColor={C.textMuted} multiline textAlignVertical="top" /></View>{blocks.length > 1 && <View style={{ paddingLeft: 4, gap: 2 }}>{i > 0 && <TouchableOpacity onPress={() => moveBlock(i, -1)}><Ionicons name="chevron-up" size={16} color={C.textMuted} /></TouchableOpacity>}{i < blocks.length - 1 && <TouchableOpacity onPress={() => moveBlock(i, 1)}><Ionicons name="chevron-down" size={16} color={C.textMuted} /></TouchableOpacity>}</View>}</View>{b.ranges && b.ranges.length > 0 && b.content.length > 0 && <View style={{ backgroundColor: theme.surfaceAlt, borderRadius: 8, padding: 10, marginTop: 4, marginBottom: 4 }}><Text style={{ fontSize: 11, color: theme.textMuted, marginBottom: 4 }}>Предпросмотр:</Text>{(() => { const len = b.content.length, pts = new Set<number>([0, len]); b.ranges.forEach(r => { pts.add(Math.max(0, r.start)); pts.add(Math.min(len, r.end)); }); const srt = Array.from(pts).sort((a, c) => a - c); return <Text style={{ fontSize: 14, lineHeight: 22, color: theme.text }}>{srt.slice(0, -1).map((ps, ix) => { const pe = srt[ix + 1]; const rs: any = {}; if (b.textStyle?.bold) rs.fontWeight = 'bold'; if (b.textStyle?.italic) rs.fontStyle = 'italic'; if (b.textStyle?.underline) rs.textDecorationLine = 'underline'; for (const r of (b.ranges || [])) { if (r.start <= ps && r.end >= pe) { if (r.bold) rs.fontWeight = 'bold'; if (r.italic) rs.fontStyle = 'italic'; if (r.underline) rs.textDecorationLine = 'underline'; if (r.highlight) { const hl = TEXT_HIGHLIGHTS.find(h => h.id === r.highlight); if (hl) rs.backgroundColor = hl.bg; } } } return <Text key={ix} style={rs}>{b.content.slice(ps, pe)}</Text>; })}</Text>; })()}</View>}<TouchableOpacity style={s.insertBtn} onPress={() => { setInsertId(b.id); setVpick(true); }}><Ionicons name="add-circle" size={18} color={C.primary} /><Text style={s.insertTxt}>Вставить стихи</Text></TouchableOpacity></View> : <View style={[s.verseEdit, { backgroundColor: getVColor(b.boxColor).bg, borderLeftColor: getVColor(b.boxColor).border }]}>{(() => { try { const d = JSON.parse(b.content) as VerseData; const font = getVFont(d.fontFamily); const ref = d.verseEnd ? `${d.book} ${d.chapter}:${d.verse}-${d.verseEnd}` : `${d.book} ${d.chapter}:${d.verse}`; return <><View style={s.verseEditHdr}><View style={s.verseEditLeft}><Ionicons name="book" size={16} color={getVColor(b.boxColor).border} /><Text style={[s.verseRef, { color: getVColor(b.boxColor).border }]}>{ref}</Text>{d.fontFamily && <Text style={s.verseFontLabel}>{font.name}</Text>}</View><View style={s.verseEditActs}><TouchableOpacity onPress={() => openVerseFormat(b.id)}><Ionicons name="text" size={20} color={getVColor(b.boxColor).border} /></TouchableOpacity><TouchableOpacity onPress={() => setColorPick(b.id)}><Ionicons name="color-palette" size={20} color={getVColor(b.boxColor).border} /></TouchableOpacity><TouchableOpacity onPress={() => removeBlock(b.id)}><Ionicons name="close-circle" size={22} color={C.error} /></TouchableOpacity></View></View><HighlightedVerseText text={d.text} highlights={d.highlights} fontFamily={font.family} baseStyle={s.verseEditTxt} /></>; } catch { return null; } })()}</View>}</View>)}
+            <View style={{ height: 200 }} />
           </ScrollView>
+          {activeId && keyboardVisible && <RTToolbar style={tStyle} onToggle={toggleStyle} onSize={setFontSize} onHighlight={setHighlight} onDivider={addDivider} />}
         </KeyboardAvoidingView></SafeAreaView>
       </Modal>
 
@@ -433,6 +761,61 @@ const JournalScreen = () => {
 
       <VerseFormatModal visible={formatVerse !== null} onClose={() => setFormatVerse(null)} verseData={formatVerse?.data || null} onSave={saveVerseFormat} />
       <VersePickerModal visible={vpick} onClose={() => { setVpick(false); setInsertId(null); }} onSelect={addVerses} />
+
+      <Modal visible={showFolderMgmt} animationType="slide" transparent>
+        <View style={s.sheetOverlay}>
+          <View style={[s.sheet, { maxHeight: '85%' }]}>
+            <View style={s.sheetHdr}>
+              <Text style={s.sheetTitle}>{editingFolder ? 'Редактировать папку' : 'Управление папками'}</Text>
+              <TouchableOpacity onPress={() => { setShowFolderMgmt(false); setEditingFolder(null); setFolderName(''); }}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity>
+            </View>
+            <ScrollView style={{ padding: 16 }}>
+              <Text style={[s.label, { marginTop: 0 }]}>{editingFolder ? 'Название' : 'Новая папка'}</Text>
+              <TextInput style={s.input} value={folderName} onChangeText={setFolderName} placeholder="Название папки..." placeholderTextColor={C.textMuted} />
+              <Text style={s.label}>Цвет</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 8 }}>
+                {FOLDER_COLORS.map(c => (
+                  <TouchableOpacity key={c.id} style={[s.fmtColorItem, { backgroundColor: c.color }, folderColor === c.color && s.fmtColorItemAct]} onPress={() => setFolderColor(c.color)} />
+                ))}
+              </View>
+              <Text style={s.label}>Иконка</Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 16 }}>
+                {FOLDER_ICONS.map(ic => (
+                  <TouchableOpacity key={ic} style={[{ width: 44, height: 44, borderRadius: 10, justifyContent: 'center', alignItems: 'center', borderWidth: 2, borderColor: folderIcon === ic ? folderColor : C.border, backgroundColor: folderIcon === ic ? folderColor + '20' : C.surface }]} onPress={() => setFolderIcon(ic)}>
+                    <Ionicons name={ic as any} size={20} color={folderIcon === ic ? folderColor : C.textMuted} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TouchableOpacity style={[s.saveBtn, { margin: 0, backgroundColor: folderColor }]} onPress={saveFolder}>
+                <Text style={s.saveBtnTxt}>{editingFolder ? 'Сохранить' : 'Создать папку'}</Text>
+              </TouchableOpacity>
+              {editingFolder && <TouchableOpacity style={{ alignItems: 'center', padding: 12, marginTop: 8 }} onPress={() => { setEditingFolder(null); setFolderName(''); setFolderColor(FOLDER_COLORS[0].color); setFolderIcon('folder'); }}>
+                <Text style={{ color: C.textMuted }}>Отмена редактирования</Text>
+              </TouchableOpacity>}
+              {folders.length > 0 && <>
+                <Text style={s.label}>Существующие папки</Text>
+                {folders.map(f => (
+                  <View key={f.id} style={[s.sheetItem, { borderRadius: 10, marginBottom: 6 }]}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1, gap: 10 }}>
+                      <View style={{ width: 36, height: 36, borderRadius: 8, backgroundColor: f.color + '20', justifyContent: 'center', alignItems: 'center' }}>
+                        <Ionicons name={f.icon as any} size={18} color={f.color} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.sheetItemTxt}>{f.name}</Text>
+                        <Text style={s.sheetItemSub}>{folderEntryCount(f.id)} записей</Text>
+                      </View>
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 12 }}>
+                      <TouchableOpacity onPress={() => startEditFolder(f)}><Ionicons name="pencil" size={20} color={C.textMuted} /></TouchableOpacity>
+                      <TouchableOpacity onPress={() => delFolder(f)}><Ionicons name="trash-outline" size={20} color={C.error} /></TouchableOpacity>
+                    </View>
+                  </View>
+                ))}
+              </>}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 };
@@ -453,7 +836,7 @@ const VersePickerModal = ({ visible, onClose, onSelect }: { visible: boolean; on
   const results = q.length > 2 ? BIBLE_VERSES.filter(v => v.text.toLowerCase().includes(q.toLowerCase()) || v.book.toLowerCase().includes(q.toLowerCase())).slice(0, 50) : [];
 
   return (
-    <Modal visible={visible} animationType="slide"><SafeAreaView style={s.modal}>
+    <Modal visible={visible} animationType="slide" statusBarTranslucent><SafeAreaView style={[s.modal, { paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }]}>
       <View style={s.modalHdr}><TouchableOpacity onPress={close}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity><Text style={s.modalTitle}>Выбрать стихи {sel.size > 0 && `(${sel.size})`}</Text>{sel.size > 0 ? <TouchableOpacity onPress={confirm}><Text style={s.saveTxt}>Добавить</Text></TouchableOpacity> : <View style={{ width: 60 }} />}</View>
       {sel.size > 0 && <View style={s.colorRow}><Text style={s.colorLbl}>Цвет:</Text>{VERSE_COLORS.map(c => <TouchableOpacity key={c.id} style={[s.colorItem, { backgroundColor: c.bg, borderColor: c.border }, col === c.id && s.colorItemAct]} onPress={() => setCol(c.id)} />)}</View>}
       <View style={s.searchBox}><Ionicons name="search" size={20} color={C.textMuted} /><TextInput style={s.searchIn} value={q} onChangeText={setQ} placeholder="Поиск..." placeholderTextColor={C.textMuted} />{q.length > 0 && <TouchableOpacity onPress={() => setQ('')}><Ionicons name="close-circle" size={20} color={C.textMuted} /></TouchableOpacity>}</View>
@@ -467,6 +850,7 @@ const VersePickerModal = ({ visible, onClose, onSelect }: { visible: boolean; on
 
 // Calendar Screen
 const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: number) => void }) => {
+  const { theme } = useTheme();
   const today = new Date();
   const [month, setMonth] = useState(today.getMonth());
   const [year, setYear] = useState(today.getFullYear());
@@ -477,6 +861,13 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
   const [showAdd, setShowAdd] = useState(false);
   const [editNote, setEditNote] = useState(false);
   const [noteTxt, setNoteTxt] = useState('');
+  const [noteBlocks, setNoteBlocks] = useState<Block[]>([{ id: genId(), type: 'text', content: '' }]);
+  const [noteActiveId, setNoteActiveId] = useState<string | null>(null);
+  const [noteTStyle, setNoteTStyle] = useState<TStyle>({});
+  const [noteKbVisible, setNoteKbVisible] = useState(false);
+  const noteScrollRef = useRef<ScrollView>(null);
+  const noteBlockPos = useRef<Record<string, number>>({});
+  const [noteSel, setNoteSel] = useState<{start: number; end: number}>({start: 0, end: 0});
   const [pickBook, setPickBook] = useState<BibleBook | null>(null);
   // Reading Plan Generator
   const [showPlanGen, setShowPlanGen] = useState(false);
@@ -491,7 +882,6 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
   const [fastNote, setFastNote] = useState('');
   const [editingFastName, setEditingFastName] = useState(false);
   const [fastName, setFastName] = useState('');
-  const [viewingEntry, setViewingEntry] = useState<Entry | null>(null);
 
   const days = useMemo(() => getMonthDays(year, month), [year, month]);
   const load = useCallback(async () => {
@@ -531,7 +921,7 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
     if (!activeFast) return;
     await db.runAsync('UPDATE fasting SET end_date=?, notes=? WHERE id=?', [selDate, fastNote || activeFast.notes, activeFast.id]);
     load(); setShowFastModal(false); setFastNote('');
-    const days = Math.ceil((new Date(selDate).getTime() - new Date(activeFast.start_date).getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    const days = Math.round((new Date(selDate + 'T00:00:00').getTime() - new Date(activeFast.start_date + 'T00:00:00').getTime()) / (1000 * 60 * 60 * 24)) + 1;
     Alert.alert('✓ Пост завершён', `${days} дней поста`);
   };
   const delFast = (id: number) => Alert.alert('Удалить пост?', '', [{ text: 'Отмена', style: 'cancel' }, { text: 'Удалить', style: 'destructive', onPress: async () => { await db.runAsync('DELETE FROM fasting WHERE id=?', [id]); load(); } }]);
@@ -543,12 +933,109 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
   const totalFastDays = useMemo(() => {
     let total = 0;
     fasts.forEach(f => {
-      const start = new Date(f.start_date);
-      const end = f.end_date ? new Date(f.end_date) : today;
-      total += Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      const start = new Date(f.start_date + 'T00:00:00');
+      const end = f.end_date ? new Date(f.end_date + 'T00:00:00') : new Date(fmtDate(today) + 'T00:00:00');
+      total += Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
     });
     return total;
   }, [fasts]);
+
+  // Note block editing functions
+  useEffect(() => {
+    const showSub = Keyboard.addListener('keyboardDidShow', () => setNoteKbVisible(true));
+    const hideSub = Keyboard.addListener('keyboardDidHide', () => setNoteKbVisible(false));
+    return () => { showSub.remove(); hideSub.remove(); };
+  }, []);
+
+  const parseNote = (n: string): Block[] => {
+    try { const p = JSON.parse(n); if (Array.isArray(p) && p[0]?.type) return p; } catch {}
+    return [{ id: genId(), type: 'text', content: n || '' }];
+  };
+
+  const openNoteEdit = () => {
+    const raw = notes[selDate] || '';
+    setNoteBlocks(parseNote(raw));
+    setNoteActiveId(null);
+    setNoteTStyle({});
+    setEditNote(true);
+  };
+
+  const saveNoteBlocks = async () => {
+    const json = JSON.stringify(noteBlocks);
+    await db.runAsync('INSERT OR REPLACE INTO daily_notes (date, notes) VALUES (?,?)', [selDate, json]);
+    load(); setEditNote(false);
+  };
+
+  const updateNoteBlock = (id: string, txt: string) => setNoteBlocks(bs => bs.map(b => {
+    if (b.id !== id) return b;
+    const upd: Block = { ...b, content: txt };
+    if (b.ranges?.length) {
+      const delta = txt.length - b.content.length;
+      if (delta !== 0) {
+        const cp = Math.max(0, noteSel.start - Math.max(0, delta));
+        upd.ranges = b.ranges.map(r => {
+          if (cp >= r.end) return r;
+          if (cp <= r.start) return { ...r, start: r.start + delta, end: r.end + delta };
+          return { ...r, end: Math.max(r.start + 1, r.end + delta) };
+        }).filter(r => r.start >= 0 && r.end <= txt.length && r.start < r.end);
+      }
+    }
+    return upd;
+  }));
+  const toggleNoteStyle = (k: keyof TStyle) => {
+    if (noteActiveId && noteSel.start < noteSel.end && (k === 'bold' || k === 'italic' || k === 'underline')) {
+      setNoteBlocks(bs => bs.map(b => {
+        if (b.id !== noteActiveId) return b;
+        const ranges = [...(b.ranges || [])];
+        let fullyCovered = true;
+        for (let i = noteSel.start; i < noteSel.end && fullyCovered; i++) {
+          if (!ranges.some(r => r[k] && r.start <= i && r.end > i)) fullyCovered = false;
+        }
+        if (fullyCovered && ranges.length > 0) {
+          const nr: StyleRange[] = [];
+          for (const r of ranges) {
+            if (!r[k] || r.end <= noteSel.start || r.start >= noteSel.end) { nr.push(r); continue; }
+            if (r.start < noteSel.start) nr.push({ ...r, end: noteSel.start });
+            if (r.end > noteSel.end) nr.push({ ...r, start: noteSel.end });
+          }
+          return { ...b, ranges: nr };
+        }
+        return { ...b, ranges: [...ranges, { start: noteSel.start, end: noteSel.end, [k]: true }] };
+      }));
+      setNoteTStyle(p => ({ ...p, [k]: !p[k] }));
+    } else {
+      const nv = !noteTStyle[k]; setNoteTStyle(p => ({ ...p, [k]: nv }));
+      if (noteActiveId) setNoteBlocks(bs => bs.map(b => b.id === noteActiveId ? { ...b, textStyle: { ...b.textStyle, [k]: nv } } : b));
+    }
+  };
+  const setNoteFontSize = (sz: string) => { setNoteTStyle(p => ({ ...p, fontSize: sz })); if (noteActiveId) setNoteBlocks(bs => bs.map(b => b.id === noteActiveId ? { ...b, textStyle: { ...b.textStyle, fontSize: sz } } : b)); };
+  const setNoteHighlight = (color: string | null) => {
+    if (noteActiveId && noteSel.start < noteSel.end) {
+      setNoteBlocks(bs => bs.map(b => {
+        if (b.id !== noteActiveId) return b;
+        const ranges = [...(b.ranges || [])];
+        if (color) return { ...b, ranges: [...ranges, { start: noteSel.start, end: noteSel.end, highlight: color }] };
+        const nr: StyleRange[] = [];
+        for (const r of ranges) {
+          if (!r.highlight || r.end <= noteSel.start || r.start >= noteSel.end) { nr.push(r); continue; }
+          if (r.start < noteSel.start) nr.push({ ...r, end: noteSel.start });
+          if (r.end > noteSel.end) nr.push({ ...r, start: noteSel.end });
+        }
+        return { ...b, ranges: nr };
+      }));
+    } else {
+      if (noteActiveId) setNoteBlocks(bs => bs.map(b => b.id === noteActiveId ? { ...b, textStyle: { ...b.textStyle, highlight: color || undefined } } : b));
+    }
+    setNoteTStyle(p => ({ ...p, highlight: color || undefined }));
+  };
+  const addNoteDivider = () => { const div: Block = { id: genId(), type: 'divider', content: '' }; if (noteActiveId) { setNoteBlocks(bs => { const i = bs.findIndex(b => b.id === noteActiveId); const n = [...bs]; n.splice(i + 1, 0, div); return n; }); } else { setNoteBlocks(bs => [...bs, div]); } };
+  const addNoteTextBlock = () => { setNoteBlocks(bs => [...bs, { id: genId(), type: 'text', content: '' }]); };
+  const removeNoteBlock = (id: string) => setNoteBlocks(bs => { const f = bs.filter(b => b.id !== id); return f.length === 0 || !f.some(b => b.type === 'text') ? [{ id: genId(), type: 'text', content: '' }] : f; });
+
+  const renderNotePreview = (raw: string): string => {
+    try { const p = JSON.parse(raw); if (Array.isArray(p) && p[0]?.type) return p.filter((b: Block) => b.type === 'text').map((b: Block) => b.content).join(' ').substring(0, 200); } catch {}
+    return raw?.substring(0, 200) || '';
+  };
 
   // Reading Plan Generator
   const resetPlanGen = () => { setPlanStep('book'); setPlanBook(null); setPlanStartCh(1); setPlanPace(1); setPlanDays(30); };
@@ -646,10 +1133,10 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
   };
 
   return (
-    <View style={s.screen}>
+    <View style={[s.screen, { paddingBottom: 80, backgroundColor: theme.bg }]}>
       <View style={s.header}>
-        <Text style={s.headerTxt}>📅 Календарь</Text>
-        <TouchableOpacity onPress={goToday} style={s.todayBtn}><Text style={s.todayTxt}>Сегодня</Text></TouchableOpacity>
+        <Text style={[s.headerTxt, { color: theme.text }]}>📅 Календарь</Text>
+        <TouchableOpacity onPress={goToday} style={[s.todayBtn, { backgroundColor: theme.accentLight }]}><Text style={[s.todayTxt, { color: theme.primary }]}>Сегодня</Text></TouchableOpacity>
       </View>
       <View style={s.monthNav}>
         <TouchableOpacity onPress={prevM}><Ionicons name="chevron-back" size={24} color={C.primary} /></TouchableOpacity>
@@ -675,9 +1162,9 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
           <View style={s.daySecHdr}>
             <Ionicons name="create" size={18} color={C.primary} />
             <Text style={s.daySecTitle}>Заметки дня</Text>
-            <TouchableOpacity onPress={() => { setNoteTxt(notes[selDate] || ''); setEditNote(true); }}><Ionicons name="pencil" size={18} color={C.textMuted} /></TouchableOpacity>
+            <TouchableOpacity onPress={openNoteEdit}><Ionicons name="pencil" size={18} color={C.textMuted} /></TouchableOpacity>
           </View>
-          {notes[selDate] ? <Text style={s.noteText}>{notes[selDate]}</Text> : <Text style={s.emptyDay}>Нажмите карандаш для добавления</Text>}
+          {notes[selDate] ? <Text style={s.noteText}>{renderNotePreview(notes[selDate])}</Text> : <Text style={s.emptyDay}>Нажмите карандаш для добавления</Text>}
         </View>
         <View style={s.daySec}>
           <View style={s.daySecHdr}>
@@ -702,10 +1189,10 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
             <Text style={s.daySecTitle}>Записи</Text>
           </View>
           {selEs.length > 0 ? selEs.map(e => (
-            <TouchableOpacity key={e.id} style={s.dayEntry} onPress={() => setViewingEntry(e)}>
+            <View key={e.id} style={s.dayEntry}>
               <Text style={s.dayEntryTitle}>{e.title}</Text>
-              <View style={[s.badge, { backgroundColor: catStyle(e.category).bg }]}><Ionicons name={catIcon(e.category)} size={12} color={catStyle(e.category).color} /><Text style={[s.badgeTxt, { color: catStyle(e.category).color, fontSize: 11 }]}>{e.category}</Text></View>
-            </TouchableOpacity>
+              <Text style={s.dayEntryCat}>{e.category}</Text>
+            </View>
           )) : <Text style={s.emptyDay}>Нет записей</Text>}
         </View>
         
@@ -771,17 +1258,27 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
         </View>
       </Modal>
 
-      <Modal visible={editNote} animationType="slide" transparent>
-        <View style={s.sheetOverlay}>
-          <View style={s.sheet}>
-            <View style={s.sheetHdr}>
-              <Text style={s.sheetTitle}>Заметка дня</Text>
-              <TouchableOpacity onPress={() => setEditNote(false)}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity>
-            </View>
-            <TextInput style={[s.input, s.textArea, { margin: 16 }]} value={noteTxt} onChangeText={setNoteTxt} placeholder="Мысли, молитвы..." placeholderTextColor={C.textMuted} multiline textAlignVertical="top" />
-            <TouchableOpacity style={s.saveBtn} onPress={saveNote}><Text style={s.saveBtnTxt}>Сохранить</Text></TouchableOpacity>
+      <Modal visible={editNote} animationType="slide" statusBarTranslucent>
+        <SafeAreaView style={[s.modal, { backgroundColor: theme.bg, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }]}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+          <View style={[s.modalHdr, { borderBottomColor: theme.border }]}>
+            <TouchableOpacity onPress={() => setEditNote(false)}><Ionicons name="close" size={24} color={theme.text} /></TouchableOpacity>
+            <Text style={[s.modalTitle, { color: theme.text }]}>Заметка — {fmtDateRu(selDate)}</Text>
+            <TouchableOpacity onPress={saveNoteBlocks}><Text style={[s.saveTxt, { color: theme.primary }]}>Сохранить</Text></TouchableOpacity>
           </View>
-        </View>
+          <ScrollView ref={noteScrollRef} style={s.modalBody} keyboardShouldPersistTaps="handled" scrollEventThrottle={16}>
+            {noteBlocks.map((b, i) => <View key={b.id} onLayout={(e) => { noteBlockPos.current[b.id] = e.nativeEvent.layout.y; }}>
+              {b.type === 'divider' ? <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 8, gap: 8 }}><View style={{ flex: 1, height: 1, backgroundColor: C.border }} /><TouchableOpacity onPress={() => removeNoteBlock(b.id)}><Ionicons name="close" size={16} color={C.error} /></TouchableOpacity></View>
+              : <View style={b.textStyle?.highlight ? { borderLeftWidth: 4, borderLeftColor: TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight)?.bg, borderRadius: 8, marginBottom: 4, paddingLeft: 4 } : undefined}>
+                <TextInput style={[s.input, s.textArea, noteActiveId === b.id && s.inputAct, b.textStyle?.fontSize && { fontSize: getFSize(b.textStyle.fontSize) }, b.textStyle?.bold && { fontWeight: 'bold' }, b.textStyle?.italic && { fontStyle: 'italic' }, b.textStyle?.underline && { textDecorationLine: 'underline' as const }, b.textStyle?.highlight && { backgroundColor: TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight)?.bg }]} value={b.content} onChangeText={t => updateNoteBlock(b.id, t)} onSelectionChange={(e) => setNoteSel(e.nativeEvent.selection)} onFocus={() => { setNoteActiveId(b.id); setNoteTStyle(b.textStyle || {}); setNoteSel({start: 0, end: 0}); setTimeout(() => { const y = noteBlockPos.current[b.id]; if (y !== undefined && noteScrollRef.current) { noteScrollRef.current.scrollTo({ y: Math.max(0, y - 100), animated: true }); } }, 150); }} placeholder={i === 0 ? "Мысли, молитвы..." : "Продолжайте..."} placeholderTextColor={C.textMuted} multiline textAlignVertical="top" />
+              </View>}
+            </View>)}
+            <TouchableOpacity style={s.insertBtn} onPress={addNoteTextBlock}>
+              <Ionicons name="add-circle" size={18} color={C.primary} /><Text style={s.insertTxt}>Добавить блок</Text>
+            </TouchableOpacity>
+            <View style={{ height: 200 }} />
+          </ScrollView>
+          {noteActiveId && noteKbVisible && <RTToolbar style={noteTStyle} onToggle={toggleNoteStyle} onSize={setNoteFontSize} onHighlight={setNoteHighlight} onDivider={addNoteDivider} />}
+        </KeyboardAvoidingView></SafeAreaView>
       </Modal>
 
       <Modal visible={showPlanGen} animationType="slide" transparent>
@@ -968,19 +1465,14 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
           </View>
         </View>
       </Modal>
-
-      <Modal visible={viewingEntry !== null} animationType="slide">
-        <SafeAreaView style={s.modal}>
-          <View style={s.modalHdr}><TouchableOpacity onPress={() => setViewingEntry(null)}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity><Text style={s.modalTitle} numberOfLines={1}>{viewingEntry?.title}</Text><View style={{ width: 24 }} /></View>
-          <ScrollView style={s.viewContent} contentContainerStyle={{ paddingBottom: 20 }}>{viewingEntry && <><View style={s.viewMeta}><View style={[s.badge, { backgroundColor: catStyle(viewingEntry.category).bg }]}><Ionicons name={catIcon(viewingEntry.category)} size={14} color={catStyle(viewingEntry.category).color} /><Text style={[s.badgeTxt, { color: catStyle(viewingEntry.category).color }]}>{viewingEntry.category}</Text></View><Text style={s.viewDate}>{new Date(viewingEntry.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text></View>{parseBlocks(viewingEntry.content).map(b => <View key={b.id}>{b.type === 'text' ? renderTextBlock(b) : renderVerseBlock(b)}</View>)}</>}</ScrollView>
-        </SafeAreaView>
-      </Modal>
     </View>
   );
 };
 
 // Bible Screen
 const BibleScreen = ({ navTarget, clearNavTarget }: { navTarget: NavTarget | null; clearNavTarget: () => void }) => {
+  const { theme, bibleFont } = useTheme();
+  const bibleFontFamily = getVFont(bibleFont).family;
   const [book, setBook] = useState<BibleBook | null>(null);
   const [chap, setChap] = useState<number | null>(null);
   const [filter, setFilter] = useState<'all' | 'old' | 'new'>('all');
@@ -1002,29 +1494,29 @@ const BibleScreen = ({ navTarget, clearNavTarget }: { navTarget: NavTarget | nul
   const verses = book && chap ? BIBLE_VERSES.filter(v => v.book === book.name && v.chapter === chap) : [];
 
   if (!book) return (
-    <View style={s.screen}>
-      <View style={s.header}><Text style={s.headerTxt}>📜 Библия</Text></View>
-      <View style={s.filterRow}>{[['all','Все'],['old','Ветхий'],['new','Новый']].map(([k,l]) => <TouchableOpacity key={k} style={[s.filterBtn, filter === k && s.filterBtnAct]} onPress={() => setFilter(k as any)}><Text style={[s.filterTxt, filter === k && s.filterTxtAct]}>{l}</Text></TouchableOpacity>)}</View>
-      <FlatList data={books} keyExtractor={i => i.name} renderItem={({ item }) => <TouchableOpacity style={s.bookItem} onPress={() => setBook(item)}><View><Text style={s.bookName}>{item.name}</Text><Text style={s.bookChaps}>{item.chapters} глав</Text></View><Ionicons name="chevron-forward" size={20} color={C.textMuted} /></TouchableOpacity>} contentContainerStyle={s.list} />
+    <View style={[s.screen, { paddingBottom: 80, backgroundColor: theme.bg }]}>
+      <View style={s.header}><Text style={[s.headerTxt, { color: theme.text }]}>📜 Библия</Text></View>
+      <View style={s.filterRow}>{[['all','Все'],['old','Ветхий'],['new','Новый']].map(([k,l]) => <TouchableOpacity key={k} style={[s.filterBtn, filter === k && s.filterBtnAct, { backgroundColor: filter === k ? theme.primary : theme.surface, borderColor: filter === k ? theme.primary : theme.border }]} onPress={() => setFilter(k as any)}><Text style={[s.filterTxt, filter === k && s.filterTxtAct, { color: filter === k ? theme.textOn : theme.textSec }]}>{l}</Text></TouchableOpacity>)}</View>
+      <FlatList data={books} keyExtractor={i => i.name} renderItem={({ item }) => <TouchableOpacity style={[s.bookItem, { backgroundColor: theme.surface }]} onPress={() => setBook(item)}><View><Text style={[s.bookName, { color: theme.text }]}>{item.name}</Text><Text style={[s.bookChaps, { color: theme.textMuted }]}>{item.chapters} глав</Text></View><Ionicons name="chevron-forward" size={20} color={theme.textMuted} /></TouchableOpacity>} contentContainerStyle={s.list} />
     </View>
   );
 
   if (!chap) return (
-    <View style={s.screen}>
-      <View style={s.header}><TouchableOpacity onPress={() => setBook(null)} style={s.backBtn}><Ionicons name="arrow-back" size={24} color={C.text} /></TouchableOpacity><Text style={s.headerTxt}>{book.name}</Text><View style={{ width: 40 }} /></View>
-      <FlatList key="cg" data={Array.from({ length: book.chapters }, (_, i) => i + 1)} numColumns={5} keyExtractor={i => i.toString()} renderItem={({ item }) => <TouchableOpacity style={s.chapBtn} onPress={() => setChap(item)}><Text style={s.chapTxt}>{item}</Text></TouchableOpacity>} contentContainerStyle={s.chapGrid} />
+    <View style={[s.screen, { paddingBottom: 80, backgroundColor: theme.bg }]}>
+      <View style={s.header}><TouchableOpacity onPress={() => setBook(null)} style={s.backBtn}><Ionicons name="arrow-back" size={24} color={theme.text} /></TouchableOpacity><Text style={[s.headerTxt, { color: theme.text }]}>{book.name}</Text><View style={{ width: 40 }} /></View>
+      <FlatList key="cg" data={Array.from({ length: book.chapters }, (_, i) => i + 1)} numColumns={5} keyExtractor={i => i.toString()} renderItem={({ item }) => <TouchableOpacity style={[s.chapBtn, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => setChap(item)}><Text style={[s.chapTxt, { color: theme.primary }]}>{item}</Text></TouchableOpacity>} contentContainerStyle={s.chapGrid} />
     </View>
   );
 
   return (
-    <View style={s.screen}>
-      <View style={s.header}><TouchableOpacity onPress={() => setChap(null)} style={s.backBtn}><Ionicons name="arrow-back" size={24} color={C.text} /></TouchableOpacity><Text style={s.headerTxt}>{book.name} {chap}</Text><View style={{ width: 40 }} /></View>
+    <View style={[s.screen, { paddingBottom: 80, backgroundColor: theme.bg }]}>
+      <View style={s.header}><TouchableOpacity onPress={() => setChap(null)} style={s.backBtn}><Ionicons name="arrow-back" size={24} color={theme.text} /></TouchableOpacity><Text style={[s.headerTxt, { color: theme.text }]}>{book.name} {chap}</Text><View style={{ width: 40 }} /></View>
       {verses.length === 0 ? <View style={s.empty}><Ionicons name="alert-circle-outline" size={48} color={C.border} /><Text style={s.emptyTxt}>Стихи не найдены</Text></View>
       : <FlatList data={verses} keyExtractor={i => i.id} renderItem={({ item }) => (
-        <View style={s.verseItem}>
-          <Text style={s.vNum}>{item.verse}</Text>
-          <Text style={s.vTxt}>{item.text}</Text>
-          <TouchableOpacity onPress={() => toggleBm(item.id)} style={s.bmBtn}><Ionicons name={bmarks.has(item.id) ? 'bookmark' : 'bookmark-outline'} size={20} color={bmarks.has(item.id) ? C.primary : C.textMuted} /></TouchableOpacity>
+        <View style={[s.verseItem, { backgroundColor: theme.surface }]}>
+          <Text style={[s.vNum, { color: theme.primary }]}>{item.verse}</Text>
+          <Text style={[s.vTxt, { color: theme.text, fontFamily: bibleFontFamily }]}>{item.text}</Text>
+          <TouchableOpacity onPress={() => toggleBm(item.id)} style={s.bmBtn}><Ionicons name={bmarks.has(item.id) ? 'bookmark' : 'bookmark-outline'} size={20} color={bmarks.has(item.id) ? theme.primary : theme.textMuted} /></TouchableOpacity>
         </View>
       )} contentContainerStyle={s.list} />}
     </View>
@@ -1033,36 +1525,547 @@ const BibleScreen = ({ navTarget, clearNavTarget }: { navTarget: NavTarget | nul
 
 // Search Screen
 const SearchScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: number) => void }) => {
+  const { theme, bibleFont } = useTheme();
+  const bibleFontFamily = getVFont(bibleFont).family;
   const [q, setQ] = useState('');
   const [res, setRes] = useState<BibleVerse[]>([]);
   const search = useCallback(() => { if (!q.trim()) { setRes([]); return; } setRes(BIBLE_VERSES.filter(v => v.text.toLowerCase().includes(q.toLowerCase()) || v.book.toLowerCase().includes(q.toLowerCase())).slice(0, 100)); }, [q]);
   useEffect(() => { const t = setTimeout(search, 300); return () => clearTimeout(t); }, [q, search]);
   return (
-    <View style={s.screen}>
-      <View style={s.header}><Text style={s.headerTxt}>🔍 Поиск</Text></View>
-      <View style={s.searchBox}><Ionicons name="search" size={20} color={C.textMuted} /><TextInput style={s.searchIn} value={q} onChangeText={setQ} placeholder="Поиск по Библии..." placeholderTextColor={C.textMuted} />{q.length > 0 && <TouchableOpacity onPress={() => setQ('')}><Ionicons name="close-circle" size={20} color={C.textMuted} /></TouchableOpacity>}</View>
-      {res.length > 0 && <Text style={s.resCnt}>Найдено: {res.length}</Text>}
+    <View style={[s.screen, { paddingBottom: 80, backgroundColor: theme.bg }]}>
+      <View style={s.header}><Text style={[s.headerTxt, { color: theme.text }]}>🔍 Поиск</Text></View>
+      <View style={[s.searchBox, { backgroundColor: theme.surface, borderColor: theme.border }]}><Ionicons name="search" size={20} color={theme.textMuted} /><TextInput style={[s.searchIn, { color: theme.text }]} value={q} onChangeText={setQ} placeholder="Поиск по Библии..." placeholderTextColor={theme.textMuted} />{q.length > 0 && <TouchableOpacity onPress={() => setQ('')}><Ionicons name="close-circle" size={20} color={theme.textMuted} /></TouchableOpacity>}</View>
+      {res.length > 0 && <Text style={[s.resCnt, { color: theme.textMuted }]}>Найдено: {res.length}</Text>}
       <FlatList data={res} keyExtractor={i => i.id} renderItem={({ item }) => (
-        <TouchableOpacity style={s.searchRes} onPress={() => onNavigate(item.book, item.chapter)}>
-          <Text style={s.searchRef}>{item.book} {item.chapter}:{item.verse}</Text>
-          <Text style={s.searchTxt}>{item.text}</Text>
-          <View style={s.goHint}><Text style={s.goHintTxt}>Открыть в Библии →</Text></View>
+        <TouchableOpacity style={[s.searchRes, { backgroundColor: theme.surface }]} onPress={() => onNavigate(item.book, item.chapter)}>
+          <Text style={[s.searchRef, { color: theme.primary }]}>{item.book} {item.chapter}:{item.verse}</Text>
+          <Text style={[s.searchTxt, { color: theme.textSec, fontFamily: bibleFontFamily }]}>{item.text}</Text>
+          <View style={[s.goHint, { borderTopColor: theme.borderLight }]}><Text style={[s.goHintTxt, { color: theme.primary }]}>Открыть в Библии →</Text></View>
         </TouchableOpacity>
       )} contentContainerStyle={s.list} />
     </View>
   );
 };
 
+// Graph View
+interface GraphNode { id: string; type: 'entry' | 'verse' | 'folder'; label: string; color: string; x: number; y: number; radius: number; }
+interface GraphEdge { from: string; to: string; strength: number; }
+
+const STOPWORDS_RU = new Set(['и','в','на','о','с','к','по','за','из','не','что','как','это','для','но','от','при','его','она','они','мы','то','бы','было','был','быть','все','так','же','уже','ещё','ни','мне','мой','моя','моё','тот','эта','это']);
+const extractKeywords = (title: string) => title.toLowerCase().replace(/[^\wа-яёА-ЯЁ\s]/g, '').split(/\s+/).filter(w => w.length > 3 && !STOPWORDS_RU.has(w));
+
+const computeGraph = (entries: Entry[], folders: Folder[]): { nodes: GraphNode[]; edges: GraphEdge[] } => {
+  const nodes: GraphNode[] = [];
+  const edges: GraphEdge[] = [];
+  const nodeMap = new Map<string, GraphNode>();
+  const catColors: Record<string, string> = { сон: '#4A7C59', откровение: '#B8860B', мысль: '#8B4513', молитва: '#7B4B94' };
+
+  // Entry nodes
+  entries.slice(0, 40).forEach(e => {
+    const id = `e${e.id}`;
+    const node: GraphNode = { id, type: 'entry', label: e.title.substring(0, 20), color: catColors[e.category] || '#8B4513', x: 0, y: 0, radius: 10 };
+    nodes.push(node);
+    nodeMap.set(id, node);
+  });
+
+  // Folder nodes
+  folders.forEach(f => {
+    const id = `f${f.id}`;
+    const node: GraphNode = { id, type: 'folder', label: f.name.substring(0, 15), color: f.color, x: 0, y: 0, radius: 14 };
+    nodes.push(node);
+    nodeMap.set(id, node);
+  });
+
+  // Connections: same category
+  const byCategory = new Map<string, string[]>();
+  entries.slice(0, 40).forEach(e => {
+    const id = `e${e.id}`;
+    const arr = byCategory.get(e.category) || [];
+    arr.push(id);
+    byCategory.set(e.category, arr);
+  });
+  byCategory.forEach(ids => {
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < Math.min(ids.length, i + 4); j++) {
+        edges.push({ from: ids[i], to: ids[j], strength: 0.3 });
+      }
+    }
+  });
+
+  // Connections: shared verses
+  const verseMap = new Map<string, string[]>();
+  entries.slice(0, 40).forEach(e => {
+    const id = `e${e.id}`;
+    try {
+      const linked = JSON.parse(e.linked_verses || '[]');
+      linked.forEach((v: any) => {
+        const vKey = `${v.book}-${v.chapter}-${v.verse}`;
+        const arr = verseMap.get(vKey) || [];
+        arr.push(id);
+        verseMap.set(vKey, arr);
+      });
+    } catch {}
+  });
+  verseMap.forEach(ids => {
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        edges.push({ from: ids[i], to: ids[j], strength: 0.7 });
+      }
+    }
+  });
+
+  // Connections: same folder
+  entries.slice(0, 40).forEach(e => {
+    if (e.folder_id) {
+      edges.push({ from: `e${e.id}`, to: `f${e.folder_id}`, strength: 0.5 });
+    }
+  });
+
+  // Connections: keyword overlap
+  const kwMap = new Map<string, string[]>();
+  entries.slice(0, 40).forEach(e => {
+    const kws = extractKeywords(e.title);
+    kws.forEach(kw => {
+      const arr = kwMap.get(kw) || [];
+      arr.push(`e${e.id}`);
+      kwMap.set(kw, arr);
+    });
+  });
+  kwMap.forEach(ids => {
+    if (ids.length > 1 && ids.length < 8) {
+      for (let i = 0; i < ids.length; i++) {
+        for (let j = i + 1; j < ids.length; j++) {
+          edges.push({ from: ids[i], to: ids[j], strength: 0.4 });
+        }
+      }
+    }
+  });
+
+  // Deduplicate edges
+  const edgeSet = new Map<string, GraphEdge>();
+  edges.forEach(e => {
+    const key = [e.from, e.to].sort().join('-');
+    const existing = edgeSet.get(key);
+    if (existing) { existing.strength = Math.min(1, existing.strength + e.strength * 0.5); }
+    else { edgeSet.set(key, { ...e }); }
+  });
+
+  // Force-directed layout
+  const w = SW - 40, h = 400;
+  nodes.forEach(n => { n.x = 20 + Math.random() * w; n.y = 20 + Math.random() * (h - 40); });
+
+  const finalEdges = Array.from(edgeSet.values());
+  for (let iter = 0; iter < 60; iter++) {
+    // Repulsion
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const dx = nodes[j].x - nodes[i].x;
+        const dy = nodes[j].y - nodes[i].y;
+        const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
+        const force = 600 / (dist * dist);
+        nodes[i].x -= (dx / dist) * force;
+        nodes[i].y -= (dy / dist) * force;
+        nodes[j].x += (dx / dist) * force;
+        nodes[j].y += (dy / dist) * force;
+      }
+    }
+    // Attraction
+    finalEdges.forEach(e => {
+      const a = nodeMap.get(e.from);
+      const b = nodeMap.get(e.to);
+      if (!a || !b) return;
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1);
+      const force = dist * 0.008 * e.strength;
+      a.x += (dx / dist) * force;
+      a.y += (dy / dist) * force;
+      b.x -= (dx / dist) * force;
+      b.y -= (dy / dist) * force;
+    });
+    // Bounds
+    nodes.forEach(n => {
+      n.x = Math.max(20, Math.min(w, n.x));
+      n.y = Math.max(20, Math.min(h - 20, n.y));
+    });
+  }
+
+  return { nodes, edges: finalEdges };
+};
+
+const GraphView = ({ entries, folders, onClose }: { entries: Entry[]; folders: Folder[]; onClose: () => void }) => {
+  const { theme } = useTheme();
+  const [selected, setSelected] = useState<GraphNode | null>(null);
+  const [viewEntry, setViewEntry] = useState<Entry | null>(null);
+  const graph = useMemo(() => computeGraph(entries, folders), [entries, folders]);
+
+  const typeLabel: Record<string, string> = { entry: 'Запись', verse: 'Стих', folder: 'Папка' };
+  const getEntry = (node: GraphNode) => node.type === 'entry' ? entries.find(e => `e${e.id}` === node.id) || null : null;
+
+  const renderEntryBlock = (b: Block) => {
+    if (b.type === 'divider') return <View style={{ height: 1, backgroundColor: theme.border, marginVertical: 12 }} />;
+    if (b.type === 'verse') { try { const d = JSON.parse(b.content) as VerseData; const vc = getVColor(b.boxColor); const ref = d.verseEnd ? `${d.book} ${d.chapter}:${d.verse}-${d.verseEnd}` : `${d.book} ${d.chapter}:${d.verse}`; return <View style={[s.verseView, { backgroundColor: vc.bg, borderLeftColor: vc.border }]}><View style={s.verseHdr}><Ionicons name="book" size={16} color={vc.border} /><Text style={[s.verseRef, { color: vc.border }]}>{ref}</Text></View><Text style={[s.verseTxt, { color: theme.text }]}>{d.text}</Text></View>; } catch { return null; } }
+    if (!b.content) return null;
+    const st: any = { fontSize: 16, color: theme.text, lineHeight: 26, marginBottom: 8 };
+    if (b.textStyle?.bold) st.fontWeight = 'bold'; if (b.textStyle?.italic) st.fontStyle = 'italic'; if (b.textStyle?.underline) st.textDecorationLine = 'underline';
+    if (b.textStyle?.highlight) { const hl = TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight); if (hl) st.backgroundColor = hl.bg; }
+    if (!b.ranges?.length) return <Text style={st}>{b.content}</Text>;
+    const len = b.content.length, pts = new Set<number>([0, len]);
+    b.ranges.forEach(r => { pts.add(Math.max(0, r.start)); pts.add(Math.min(len, r.end)); });
+    const sorted = Array.from(pts).sort((a, c) => a - c);
+    return <Text>{sorted.slice(0, -1).map((ps, i) => { const pe = sorted[i + 1]; const rs: any = { ...st }; for (const r of (b.ranges || [])) { if (r.start <= ps && r.end >= pe) { if (r.bold) rs.fontWeight = 'bold'; if (r.italic) rs.fontStyle = 'italic'; if (r.underline) rs.textDecorationLine = 'underline'; if (r.highlight) { const hl = TEXT_HIGHLIGHTS.find(h => h.id === r.highlight); if (hl) rs.backgroundColor = hl.bg; } } } return <Text key={i} style={rs}>{b.content.slice(ps, pe)}</Text>; })}</Text>;
+  };
+
+  return (
+    <Modal visible animationType="slide" statusBarTranslucent><SafeAreaView style={[s.modal, { paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }]}>
+      <View style={s.modalHdr}>
+        <TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity>
+        <Text style={s.modalTitle}>Граф связей</Text>
+        <View style={{ width: 24 }} />
+      </View>
+      <ScrollView>
+        <View style={{ padding: 16 }}>
+          <View style={{ flexDirection: 'row', gap: 16, marginBottom: 12, flexWrap: 'wrap' }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}><View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#8B4513' }} /><Text style={{ fontSize: 11, color: C.textMuted }}>Мысль</Text></View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}><View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#B8860B' }} /><Text style={{ fontSize: 11, color: C.textMuted }}>Откров.</Text></View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}><View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#4A7C59' }} /><Text style={{ fontSize: 11, color: C.textMuted }}>Сон</Text></View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}><View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#7B4B94' }} /><Text style={{ fontSize: 11, color: C.textMuted }}>Молитва</Text></View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}><View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: C.accent, borderWidth: 1, borderColor: C.border }} /><Text style={{ fontSize: 11, color: C.textMuted }}>Папка</Text></View>
+          </View>
+          <View style={{ backgroundColor: C.surface, borderRadius: 16, overflow: 'hidden', position: 'relative' }}>
+            <Svg width={SW - 32} height={400}>
+              {graph.edges.map((e, i) => {
+                const a = graph.nodes.find(n => n.id === e.from);
+                const b = graph.nodes.find(n => n.id === e.to);
+                if (!a || !b) return null;
+                return <Line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={C.border} strokeWidth={Math.max(e.strength * 2.5, 0.5)} strokeOpacity={0.5} />;
+              })}
+              {graph.nodes.map(n => (
+                <G key={n.id}>
+                  <Circle cx={n.x} cy={n.y} r={n.radius} fill={n.color} opacity={selected && selected.id !== n.id ? 0.4 : 0.9} stroke={selected?.id === n.id ? C.text : 'transparent'} strokeWidth={2} />
+                  <SvgText x={n.x} y={n.y + n.radius + 12} textAnchor="middle" fontSize={9} fill={C.textMuted}>{n.label}</SvgText>
+                </G>
+              ))}
+            </Svg>
+            {graph.nodes.map(n => (
+              <TouchableOpacity key={`touch-${n.id}`} style={{ position: 'absolute', left: n.x - n.radius - 4, top: n.y - n.radius - 4, width: (n.radius + 4) * 2, height: (n.radius + 4) * 2, borderRadius: n.radius + 4 }} onPress={() => setSelected(selected?.id === n.id ? null : n)} activeOpacity={0.7} />
+            ))}
+          </View>
+          {selected && (
+            <View style={{ backgroundColor: theme.surface, borderRadius: 12, padding: 16, marginTop: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: selected.color }} />
+                <Text style={{ fontSize: 16, fontWeight: '600', color: theme.text, flex: 1 }}>{selected.label}</Text>
+                <Text style={{ fontSize: 12, color: theme.textMuted }}>({typeLabel[selected.type]})</Text>
+              </View>
+              {selected.type === 'entry' && getEntry(selected) && (
+                <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: theme.primary, paddingVertical: 10, borderRadius: 10, marginBottom: 10 }} onPress={() => setViewEntry(getEntry(selected))}>
+                  <Ionicons name="reader-outline" size={18} color={theme.textOn} />
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: theme.textOn }}>Открыть запись</Text>
+                </TouchableOpacity>
+              )}
+              {(() => {
+                const connEdges = graph.edges.filter(e => e.from === selected.id || e.to === selected.id);
+                const connNodes = connEdges.map(e => graph.nodes.find(n => n.id === (e.from === selected.id ? e.to : e.from))).filter(Boolean);
+                return <>
+                  <Text style={{ fontSize: 13, color: theme.textSec, marginBottom: connNodes.length > 0 ? 8 : 0 }}>Связей: {connEdges.length}</Text>
+                  {connNodes.map((cn, i) => cn && (
+                    <TouchableOpacity key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 6 }} onPress={() => { if (cn.type === 'entry') { const entry = entries.find(e => `e${e.id}` === cn.id); if (entry) { setViewEntry(entry); return; } } setSelected(cn); }}>
+                      <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: cn.color }} />
+                      <Text style={{ fontSize: 13, color: theme.primary }}>{cn.label}</Text>
+                      <Text style={{ fontSize: 11, color: theme.textMuted }}>({typeLabel[cn.type]})</Text>
+                      {cn.type === 'entry' && <Ionicons name="open-outline" size={12} color={theme.primary} />}
+                    </TouchableOpacity>
+                  ))}
+                </>;
+              })()}
+            </View>
+          )}
+          <View style={{ marginTop: 16, padding: 12, backgroundColor: theme.surfaceAlt, borderRadius: 12 }}>
+            <Text style={{ fontSize: 13, color: theme.textSec, textAlign: 'center' }}>{graph.nodes.length} узлов • {graph.edges.length} связей</Text>
+          </View>
+        </View>
+      </ScrollView>
+      {viewEntry && (
+        <Modal visible animationType="slide" statusBarTranslucent>
+          <SafeAreaView style={[s.modal, { backgroundColor: theme.bg, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }]}>
+            <View style={[s.modalHdr, { borderBottomColor: theme.border }]}>
+              <TouchableOpacity onPress={() => setViewEntry(null)}><Ionicons name="arrow-back" size={24} color={theme.text} /></TouchableOpacity>
+              <Text style={[s.modalTitle, { color: theme.text }]} numberOfLines={1}>{viewEntry.title}</Text>
+              <View style={{ width: 24 }} />
+            </View>
+            <ScrollView style={s.viewContent}>
+              <View style={s.viewMeta}>
+                <View style={[s.badge, { backgroundColor: catStyle(viewEntry.category).bg }]}>
+                  <Ionicons name={catIcon(viewEntry.category) as any} size={14} color={catStyle(viewEntry.category).color} />
+                  <Text style={[s.badgeTxt, { color: catStyle(viewEntry.category).color }]}>{viewEntry.category}</Text>
+                </View>
+                <Text style={[s.viewDate, { color: theme.textMuted }]}>{new Date(viewEntry.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text>
+              </View>
+              {parseBlocks(viewEntry.content).map(b => <View key={b.id}>{renderEntryBlock(b)}</View>)}
+            </ScrollView>
+          </SafeAreaView>
+        </Modal>
+      )}
+    </SafeAreaView></Modal>
+  );
+};
+
 // Settings Screen
 const SettingsScreen = () => {
-  const [stats, setStats] = useState({ e: 0, b: 0, r: 0 });
-  useEffect(() => { (async () => { const e = await db.getFirstAsync<{ c: number }>('SELECT COUNT(*) as c FROM entries'); const b = await db.getFirstAsync<{ c: number }>('SELECT COUNT(*) as c FROM bookmarks'); const r = await db.getFirstAsync<{ c: number }>('SELECT COUNT(*) as c FROM reading_plan WHERE completed=1'); setStats({ e: e?.c || 0, b: b?.c || 0, r: r?.c || 0 }); })(); }, []);
+  const { theme, themeId, setThemeId, fontScale, setFontScale, bibleFont, setBibleFont } = useTheme();
+  const [stats, setStats] = useState({ e: 0, b: 0, r: 0, totalR: 0, streak: 0, fastDays: 0 });
+  const [byCat, setByCat] = useState<Record<Cat, number>>({ сон: 0, откровение: 0, мысль: 0, молитва: 0 });
+  const [byMonth, setByMonth] = useState<{ month: string; label: string; count: number }[]>([]);
+  const [showGraph, setShowGraph] = useState(false);
+  const [allEntries, setAllEntries] = useState<Entry[]>([]);
+  const [allFolders, setAllFolders] = useState<Folder[]>([]);
+
+  useEffect(() => { (async () => {
+    const e = await db.getFirstAsync<{ c: number }>('SELECT COUNT(*) as c FROM entries');
+    const b = await db.getFirstAsync<{ c: number }>('SELECT COUNT(*) as c FROM bookmarks');
+    const r = await db.getFirstAsync<{ c: number }>('SELECT COUNT(*) as c FROM reading_plan WHERE completed=1');
+    const totalR = await db.getFirstAsync<{ c: number }>('SELECT COUNT(*) as c FROM reading_plan');
+
+    // Category breakdown
+    const cats = await db.getAllAsync<{ category: string; c: number }>('SELECT category, COUNT(*) as c FROM entries GROUP BY category');
+    const catMap: Record<Cat, number> = { сон: 0, откровение: 0, мысль: 0, молитва: 0 };
+    cats.forEach(c => { if (c.category in catMap) catMap[c.category as Cat] = c.c; });
+    setByCat(catMap);
+
+    // Monthly activity (last 6 months)
+    const months = await db.getAllAsync<{ month: string; c: number }>(
+      "SELECT strftime('%Y-%m', created_at) as month, COUNT(*) as c FROM entries GROUP BY month ORDER BY month DESC LIMIT 6"
+    );
+    const monthLabels = ['Янв','Фев','Мар','Апр','Май','Июн','Июл','Авг','Сен','Окт','Ноя','Дек'];
+    setByMonth(months.reverse().map(m => ({ month: m.month, label: monthLabels[parseInt(m.month.split('-')[1]) - 1], count: m.c })));
+
+    // Entry streak
+    const dates = await db.getAllAsync<{ d: string }>("SELECT DISTINCT date(created_at) as d FROM entries ORDER BY d DESC");
+    let streak = 0;
+    const today = fmtDate(new Date());
+    let expected = today;
+    for (const r of dates) {
+      if (r.d === expected) { streak++; const dt = new Date(expected); dt.setDate(dt.getDate() - 1); expected = fmtDate(dt); }
+      else if (r.d < expected) break;
+    }
+
+    // Fasting days
+    const fasts = await db.getAllAsync<Fasting>('SELECT * FROM fasting');
+    let fastDays = 0;
+    const nowStr = fmtDate(new Date());
+    fasts.forEach(f => {
+      const start = new Date(f.start_date + 'T00:00:00');
+      const end = f.end_date ? new Date(f.end_date + 'T00:00:00') : new Date(nowStr + 'T00:00:00');
+      fastDays += Math.round((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    });
+
+    setStats({ e: e?.c || 0, b: b?.c || 0, r: r?.c || 0, totalR: totalR?.c || 0, streak, fastDays });
+
+    // Load for graph
+    setAllEntries(await db.getAllAsync<Entry>('SELECT * FROM entries ORDER BY created_at DESC'));
+    setAllFolders(await db.getAllAsync<Folder>('SELECT * FROM folders ORDER BY sort_order ASC'));
+  })(); }, []);
+
+  const totalEntries = Math.max(stats.e, 1);
+  const catColors: Record<Cat, string> = { сон: C.success, откровение: C.warning, мысль: C.primary, молитва: '#7B4B94' };
+  const maxMonth = Math.max(...byMonth.map(m => m.count), 1);
+  const readPct = stats.totalR > 0 ? Math.round((stats.r / stats.totalR) * 100) : 0;
+
+  const exportData = async () => {
+    try {
+      const data = {
+        version: '3.2',
+        exportDate: new Date().toISOString(),
+        entries: await db.getAllAsync('SELECT * FROM entries'),
+        bookmarks: await db.getAllAsync('SELECT * FROM bookmarks'),
+        readingPlan: await db.getAllAsync('SELECT * FROM reading_plan'),
+        dailyNotes: await db.getAllAsync('SELECT * FROM daily_notes'),
+        fasting: await db.getAllAsync('SELECT * FROM fasting'),
+        folders: await db.getAllAsync('SELECT * FROM folders'),
+        dailyVerseHistory: await db.getAllAsync('SELECT * FROM daily_verse_history'),
+        appSettings: await db.getAllAsync('SELECT * FROM app_settings'),
+      };
+      const json = JSON.stringify(data, null, 2);
+      const file = new ExpoFile(Paths.cache, 'divine_journal_backup.json');
+      await file.write(json);
+      const canShare = await Sharing.isAvailableAsync();
+      if (canShare) {
+        await Sharing.shareAsync(file.uri, { mimeType: 'application/json', dialogTitle: 'Экспорт данных' });
+      } else {
+        Alert.alert('Экспорт', `Файл сохранён: ${file.uri}`);
+      }
+    } catch (e: any) { Alert.alert('Ошибка экспорта', e?.message || 'Не удалось экспортировать данные'); }
+  };
+
+  const importData = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({ type: 'application/json' });
+      if (result.canceled || !result.assets?.[0]) return;
+      const uri = result.assets[0].uri;
+      const importFile = new ExpoFile(uri);
+      const json = await importFile.text();
+      const data = JSON.parse(json);
+      if (!data.version || !data.entries) { Alert.alert('Ошибка', 'Неверный формат файла'); return; }
+
+      Alert.alert('Импорт данных', `Найдено: ${data.entries?.length || 0} записей, ${data.bookmarks?.length || 0} закладок, ${data.folders?.length || 0} папок.\n\nЭто заменит текущие данные.`, [
+        { text: 'Отмена', style: 'cancel' },
+        { text: 'Импортировать', style: 'destructive', onPress: async () => {
+          try {
+            // Clear existing data
+            await db.execAsync('DELETE FROM entries; DELETE FROM bookmarks; DELETE FROM reading_plan; DELETE FROM daily_notes; DELETE FROM fasting; DELETE FROM folders; DELETE FROM daily_verse_history;');
+
+            // Import entries
+            for (const e of (data.entries || [])) {
+              await db.runAsync('INSERT INTO entries (id, title, content, category, created_at, linked_verses, folder_id) VALUES (?,?,?,?,?,?,?)',
+                [e.id, e.title, e.content, e.category, e.created_at, e.linked_verses, e.folder_id || null]);
+            }
+            // Import bookmarks
+            for (const b of (data.bookmarks || [])) {
+              await db.runAsync('INSERT OR IGNORE INTO bookmarks (id, verse_id, created_at) VALUES (?,?,?)', [b.id, b.verse_id, b.created_at]);
+            }
+            // Import reading plan
+            for (const r of (data.readingPlan || [])) {
+              await db.runAsync('INSERT OR REPLACE INTO reading_plan (id, date, book, chapter, completed) VALUES (?,?,?,?,?)', [r.id, r.date, r.book, r.chapter, r.completed]);
+            }
+            // Import daily notes
+            for (const n of (data.dailyNotes || [])) {
+              await db.runAsync('INSERT OR REPLACE INTO daily_notes (id, date, notes) VALUES (?,?,?)', [n.id, n.date, n.notes]);
+            }
+            // Import fasting
+            for (const f of (data.fasting || [])) {
+              await db.runAsync('INSERT INTO fasting (id, start_date, end_date, notes, created_at) VALUES (?,?,?,?,?)', [f.id, f.start_date, f.end_date, f.notes, f.created_at]);
+            }
+            // Import folders
+            for (const f of (data.folders || [])) {
+              await db.runAsync('INSERT INTO folders (id, name, color, icon, sort_order) VALUES (?,?,?,?,?)', [f.id, f.name, f.color, f.icon, f.sort_order]);
+            }
+            // Import daily verse history
+            for (const v of (data.dailyVerseHistory || [])) {
+              await db.runAsync('INSERT OR IGNORE INTO daily_verse_history (id, date, verse_id, seen) VALUES (?,?,?,?)', [v.id, v.date, v.verse_id, v.seen]);
+            }
+            Alert.alert('Готово', 'Данные успешно импортированы. Перезапустите приложение.');
+          } catch (e) { Alert.alert('Ошибка', 'Не удалось импортировать данные'); }
+        }},
+      ]);
+    } catch (e) { Alert.alert('Ошибка', 'Не удалось прочитать файл'); }
+  };
+
   return (
-    <View style={s.screen}><View style={s.header}><Text style={s.headerTxt}>⚙️ Настройки</Text></View>
+    <View style={[s.screen, { paddingBottom: 80, backgroundColor: theme.bg }]}><View style={s.header}><Text style={[s.headerTxt, { color: theme.text }]}>⚙️ Настройки</Text></View>
       <ScrollView style={s.settingsContent}>
-        <View style={s.section}><Text style={s.secTitle}>СТАТИСТИКА</Text><View style={s.statsRow}><View style={s.statCard}><Ionicons name="journal" size={24} color={C.primary} /><Text style={s.statNum}>{stats.e}</Text><Text style={s.statLbl}>Записей</Text></View><View style={s.statCard}><Ionicons name="bookmark" size={24} color={C.warning} /><Text style={s.statNum}>{stats.b}</Text><Text style={s.statLbl}>Закладок</Text></View><View style={s.statCard}><Ionicons name="checkmark-circle" size={24} color={C.success} /><Text style={s.statNum}>{stats.r}</Text><Text style={s.statLbl}>Прочитано</Text></View></View></View>
-        <View style={s.section}><Text style={s.secTitle}>О ПРИЛОЖЕНИИ</Text><View style={s.aboutCard}><Ionicons name="book" size={40} color={C.primary} /><Text style={s.appName}>Divine Journal</Text><Text style={s.appVer}>Версия 3.2</Text><Text style={s.appDesc}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>ОБЗОР</Text>
+          <View style={s.statsRow}>
+            <View style={[s.statCard, { backgroundColor: theme.surface }]}><Ionicons name="journal" size={24} color={theme.primary} /><Text style={[s.statNum, { color: theme.text }]}>{stats.e}</Text><Text style={[s.statLbl, { color: theme.textMuted }]}>Записей</Text></View>
+            <View style={[s.statCard, { backgroundColor: theme.surface }]}><Ionicons name="bookmark" size={24} color={theme.warning} /><Text style={[s.statNum, { color: theme.text }]}>{stats.b}</Text><Text style={[s.statLbl, { color: theme.textMuted }]}>Закладок</Text></View>
+            <View style={[s.statCard, { backgroundColor: theme.surface }]}><Ionicons name="checkmark-circle" size={24} color={theme.success} /><Text style={[s.statNum, { color: theme.text }]}>{stats.r}</Text><Text style={[s.statLbl, { color: theme.textMuted }]}>Прочитано</Text></View>
+          </View>
+        </View>
+
+        {stats.e > 0 && <View style={s.section}><Text style={s.secTitle}>ПО КАТЕГОРИЯМ</Text>
+          {(['сон','откровение','мысль','молитва'] as Cat[]).map(c => {
+            const count = byCat[c]; const pct = Math.round((count / totalEntries) * 100);
+            return <View key={c} style={s.statBar}>
+              <View style={{ width: 95, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name={catIcon(c) as any} size={14} color={catColors[c]} />
+                <Text style={s.statBarLbl}>{c}</Text>
+              </View>
+              <View style={s.statBarTrack}><View style={[s.statBarFill, { width: `${Math.max(pct, 2)}%`, backgroundColor: catColors[c] }]} /></View>
+              <Text style={s.statBarCnt}>{count} ({pct}%)</Text>
+            </View>;
+          })}
+        </View>}
+
+        {byMonth.length > 0 && <View style={s.section}><Text style={s.secTitle}>АКТИВНОСТЬ</Text>
+          <View style={s.activityChart}>
+            {byMonth.map((m, i) => (
+              <View key={i} style={{ flex: 1, alignItems: 'center' }}>
+                <Text style={{ fontSize: 11, color: C.textSec, marginBottom: 4 }}>{m.count}</Text>
+                <View style={[s.activityBar, { height: Math.max((m.count / maxMonth) * 80, 4) }]} />
+                <Text style={{ fontSize: 10, color: C.textMuted, marginTop: 4 }}>{m.label}</Text>
+              </View>
+            ))}
+          </View>
+        </View>}
+
+        {stats.totalR > 0 && <View style={s.section}><Text style={s.secTitle}>ПЛАН ЧТЕНИЯ</Text>
+          <View style={{ backgroundColor: C.surface, borderRadius: 12, padding: 16 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 }}>
+              <Text style={{ fontSize: 14, color: C.textSec }}>{stats.r} из {stats.totalR}</Text>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: C.primary }}>{readPct}%</Text>
+            </View>
+            <View style={s.statBarTrack}><View style={[s.statBarFill, { width: `${readPct}%`, backgroundColor: C.success }]} /></View>
+          </View>
+        </View>}
+
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>ДОСТИЖЕНИЯ</Text>
+          <View style={{ backgroundColor: theme.surface, borderRadius: 12, padding: 16, gap: 12 }}>
+            <View style={s.achieveRow}><Ionicons name="flame" size={20} color={theme.warning} /><Text style={{ fontSize: 14, color: theme.text }}>Серия записей</Text><Text style={{ marginLeft: 'auto', fontSize: 16, fontWeight: '700', color: theme.warning }}>{stats.streak} дн.</Text></View>
+            <View style={s.achieveRow}><Ionicons name="heart" size={20} color="#9C27B0" /><Text style={{ fontSize: 14, color: theme.text }}>Дней поста</Text><Text style={{ marginLeft: 'auto', fontSize: 16, fontWeight: '700', color: '#9C27B0' }}>{stats.fastDays}</Text></View>
+            <View style={s.achieveRow}><Ionicons name="book" size={20} color={theme.success} /><Text style={{ fontSize: 14, color: theme.text }}>Глав прочитано</Text><Text style={{ marginLeft: 'auto', fontSize: 16, fontWeight: '700', color: theme.success }}>{stats.r}</Text></View>
+          </View>
+        </View>
+
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>ОФОРМЛЕНИЕ</Text>
+          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+            {([['light', 'Светлая', 'sunny'], ['dark', 'Тёмная', 'moon'], ['sepia', 'Сепия', 'document-text']] as const).map(([id, label, icon]) => (
+              <TouchableOpacity key={id} style={[s.statCard, { backgroundColor: theme.surface, borderWidth: 2, borderColor: themeId === id ? theme.primary : 'transparent' }]} onPress={() => setThemeId(id)}>
+                <Ionicons name={icon} size={24} color={themeId === id ? theme.primary : theme.textMuted} />
+                <Text style={[s.statLbl, { marginTop: 6, color: themeId === id ? theme.primary : theme.textMuted }]}>{label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Text style={{ fontSize: 14, color: theme.textSec, marginBottom: 8 }}>Размер текста</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            <TouchableOpacity onPress={() => setFontScale(Math.max(0.8, fontScale - 0.1))}><Text style={{ fontSize: 20, fontWeight: '700', color: theme.primary }}>A-</Text></TouchableOpacity>
+            <View style={{ flex: 1, height: 4, backgroundColor: theme.borderLight, borderRadius: 2 }}>
+              <View style={{ width: `${((fontScale - 0.8) / 0.6) * 100}%`, height: 4, backgroundColor: theme.primary, borderRadius: 2 }} />
+            </View>
+            <TouchableOpacity onPress={() => setFontScale(Math.min(1.4, fontScale + 0.1))}><Text style={{ fontSize: 20, fontWeight: '700', color: theme.primary }}>A+</Text></TouchableOpacity>
+            <Text style={{ fontSize: 12, color: theme.textMuted, width: 40, textAlign: 'right' }}>{Math.round(fontScale * 100)}%</Text>
+          </View>
+          <Text style={{ fontSize: Math.round(14 * fontScale), color: theme.textSec, marginTop: 10, fontStyle: 'italic' }}>Образец текста</Text>
+          <Text style={{ fontSize: 14, color: theme.textSec, marginBottom: 8, marginTop: 20 }}>Шрифт Библии</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {VERSE_FONTS.map(f => (
+              <TouchableOpacity key={f.id} style={[s.statCard, { backgroundColor: theme.surface, borderWidth: 2, borderColor: bibleFont === f.id ? theme.primary : 'transparent', paddingVertical: 12 }]} onPress={() => setBibleFont(f.id)}>
+                <Text style={{ fontSize: 20, fontFamily: f.family, color: theme.text }}>Аа</Text>
+                <Text style={{ fontSize: 11, color: bibleFont === f.id ? theme.primary : theme.textMuted, marginTop: 4, fontWeight: bibleFont === f.id ? '600' : '400' }}>{f.name}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <Text style={{ fontSize: 14, fontFamily: getVFont(bibleFont).family, color: theme.textSec, marginTop: 10, fontStyle: 'italic', lineHeight: 22 }}>"В начале сотворил Бог небо и землю."</Text>
+        </View>
+
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>ИНСТРУМЕНТЫ</Text>
+          <TouchableOpacity style={[s.sheetItem, { borderRadius: 12, backgroundColor: theme.surface }]} onPress={() => setShowGraph(true)}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Ionicons name="git-network" size={22} color={theme.primary} />
+              <View><Text style={{ fontSize: 15, fontWeight: '500', color: theme.text }}>Граф связей</Text><Text style={{ fontSize: 12, color: theme.textMuted }}>Визуализация связей между записями</Text></View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>ДАННЫЕ</Text>
+          <TouchableOpacity style={[s.sheetItem, { borderRadius: 12, backgroundColor: theme.surface, marginBottom: 8 }]} onPress={exportData}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Ionicons name="cloud-upload" size={22} color={theme.success} />
+              <View><Text style={{ fontSize: 15, fontWeight: '500', color: theme.text }}>Экспорт данных</Text><Text style={{ fontSize: 12, color: theme.textMuted }}>Сохранить резервную копию</Text></View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+          </TouchableOpacity>
+          <TouchableOpacity style={[s.sheetItem, { borderRadius: 12, backgroundColor: theme.surface }]} onPress={importData}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Ionicons name="cloud-download" size={22} color={theme.primary} />
+              <View><Text style={{ fontSize: 15, fontWeight: '500', color: theme.text }}>Импорт данных</Text><Text style={{ fontSize: 12, color: theme.textMuted }}>Восстановить из резервной копии</Text></View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 3.2</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
       </ScrollView>
+      {showGraph && <GraphView entries={allEntries} folders={allFolders} onClose={() => setShowGraph(false)} />}
     </View>
   );
 };
@@ -1071,11 +2074,11 @@ const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg }, loading: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: C.bg }, loadingTxt: { marginTop: 16, fontSize: 16, color: C.textSec },
   screen: { flex: 1, backgroundColor: C.bg }, header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, paddingTop: 8 }, headerTxt: { fontSize: 22, fontWeight: '700', color: C.text },
   backBtn: { padding: 8 }, addBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: C.primary, justifyContent: 'center', alignItems: 'center' },
-  tabBar: { flexDirection: 'row', backgroundColor: C.surface, borderTopWidth: 1, borderTopColor: C.border, paddingTop: 6, paddingBottom: 4 }, tabBtn: { flex: 1, alignItems: 'center', paddingVertical: 8 }, tabLbl: { fontSize: 10, marginTop: 2, color: C.textMuted }, tabLblAct: { color: C.primary, fontWeight: '600' },
+  tabBar: { flexDirection: 'row', backgroundColor: C.surface, borderTopWidth: 1, borderTopColor: C.border, paddingTop: 6, paddingBottom: 8, position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 1000 }, tabBtn: { flex: 1, alignItems: 'center', paddingVertical: 8 }, tabLbl: { fontSize: 10, marginTop: 2, color: C.textMuted }, tabLblAct: { color: C.primary, fontWeight: '600' },
   list: { padding: 16, paddingTop: 8 }, empty: { alignItems: 'center', paddingTop: 60 }, emptyTxt: { fontSize: 16, color: C.textMuted, marginTop: 16 },
-  toolbar: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.surfaceAlt, paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: C.border },
+  toolbar: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.surfaceAlt, paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 1, borderTopColor: C.border },
   toolBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center', borderRadius: 8, marginHorizontal: 2, flexDirection: 'row' }, toolBtnAct: { backgroundColor: C.primary }, toolTxt: { fontSize: 16, fontWeight: '600', color: C.textSec }, toolTxtAct: { color: C.textOn }, toolDiv: { width: 1, height: 24, backgroundColor: C.border, marginHorizontal: 8 },
-  dropdown: { position: 'absolute', top: 44, right: 8, backgroundColor: C.surface, borderRadius: 12, padding: 8, elevation: 5, zIndex: 100, minWidth: 100 }, dropItem: { paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8 },
+  dropdown: { position: 'absolute', bottom: 44, right: 8, backgroundColor: C.surface, borderRadius: 12, padding: 8, elevation: 5, zIndex: 100, minWidth: 100 }, dropItem: { paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8 },
   card: { backgroundColor: C.surface, borderRadius: 12, padding: 16, marginBottom: 12, borderLeftWidth: 4, elevation: 1 }, cardHdr: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   badge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }, badgeTxt: { fontSize: 12, fontWeight: '600', marginLeft: 4, textTransform: 'capitalize' },
   cardDate: { fontSize: 12, color: C.textMuted }, cardTitle: { fontSize: 17, fontWeight: '600', color: C.text, marginBottom: 6 }, cardPrev: { fontSize: 14, color: C.textSec, lineHeight: 20 },
@@ -1127,4 +2130,25 @@ const s = StyleSheet.create({
   fmtAddBtn: { flexDirection: 'row', backgroundColor: C.primary, padding: 14, borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 16 }, fmtAddTxt: { color: C.textOn, fontSize: 16, fontWeight: '600' },
   fmtHlItem: { flexDirection: 'row', backgroundColor: C.surface, padding: 12, borderRadius: 10, marginBottom: 8, alignItems: 'center' }, fmtHlRange: { fontSize: 13, fontWeight: '600', color: C.primary }, fmtHlPreview: { fontSize: 13, color: C.textSec, fontStyle: 'italic' },
   fmtHlStyles: { flexDirection: 'row', gap: 6, marginTop: 4 }, fmtHlTag: { fontSize: 11, color: C.textMuted, backgroundColor: C.surfaceAlt, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }, fmtHlColorDot: { width: 16, height: 16, borderRadius: 8 },
+  // Folder styles
+  folderBar: { minHeight: 52, marginBottom: 8 },
+  folderChip: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, borderRadius: 20, backgroundColor: C.surface, borderWidth: 1.5, borderColor: C.border, gap: 6, minHeight: 40 },
+  folderChipAct: { backgroundColor: C.primary, borderColor: C.primary },
+  folderChipTxt: { fontSize: 14, fontWeight: '500', color: C.textSec },
+  folderChipTxtAct: { color: C.textOn },
+  // Statistics styles
+  statBar: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  statBarLbl: { fontSize: 13, color: C.textSec, textTransform: 'capitalize' },
+  statBarTrack: { flex: 1, height: 8, backgroundColor: C.borderLight, borderRadius: 4, overflow: 'hidden' },
+  statBarFill: { height: 8, borderRadius: 4 },
+  statBarCnt: { width: 70, textAlign: 'right', fontSize: 12, color: C.textMuted },
+  activityChart: { flexDirection: 'row', alignItems: 'flex-end', backgroundColor: C.surface, borderRadius: 12, padding: 16, paddingTop: 8, height: 140 },
+  activityBar: { width: 20, borderRadius: 4, backgroundColor: C.primary },
+  achieveRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  // Daily verse styles
+  dailyVerse: { backgroundColor: '#FFF8E7', marginHorizontal: 16, marginBottom: 8, padding: 16, borderRadius: 16, borderWidth: 1, borderColor: C.accent },
+  dailyVerseLbl: { fontSize: 13, fontWeight: '700', color: C.warning, letterSpacing: 0.5 },
+  dailyVerseTxt: { fontSize: 15, fontStyle: 'italic', color: C.text, lineHeight: 22, marginTop: 8, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif' },
+  dailyVerseRef: { fontSize: 13, fontWeight: '600', color: C.primary },
+  streakBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#FFF3E0', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
 });
