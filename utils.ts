@@ -78,6 +78,24 @@ export const calcStreak = (dates: string[]): number => {
   return streak;
 };
 
+export const fmtRelTime = (dateStr: string): string => {
+  const now = Date.now();
+  const then = new Date(dateStr).getTime();
+  const diff = now - then;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'только что';
+  if (mins < 60) return `${mins} мин. назад`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours} ч. назад`;
+  const days = Math.floor(hours / 24);
+  if (days === 1) return 'вчера';
+  if (days < 7) return `${days} дн. назад`;
+  if (days < 30) return `${Math.floor(days / 7)} нед. назад`;
+  return new Date(dateStr).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+};
+
+export const scaledSz = (base: number, scale: number) => Math.round(base * scale);
+
 export const parseNote = (n: string): Block[] => {
   try {
     const p = JSON.parse(n);
