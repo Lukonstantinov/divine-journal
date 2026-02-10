@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Modal, ScrollView, Alert, StatusBar, SafeAreaView, KeyboardAvoidingView, Platform, Dimensions, AppState, Keyboard } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Modal, ScrollView, Alert, StatusBar, KeyboardAvoidingView, Platform, Dimensions, AppState, Keyboard } from 'react-native';
 import * as SQLite from 'expo-sqlite';
 import { Ionicons } from '@expo/vector-icons';
 import { BIBLE_VERSES, BIBLE_BOOKS, BibleVerse, BibleBook } from './BibleVerses';
-import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Text as SvgText, G } from 'react-native-svg';
 import { File as ExpoFile, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
@@ -157,11 +157,12 @@ const SafeAreaWrapper = ({ children }: { children: React.ReactNode }) => {
   const topPad = Math.max(insets.top, statusBarHeight);
 
   return (
-    <SafeAreaView style={[s.container, {
+    <View style={[s.container, {
       paddingTop: topPad,
+      paddingBottom: insets.bottom,
     }]}>
       {children}
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -374,7 +375,7 @@ const VerseFormatModal = ({ visible, onClose, verseData, onSave }: { visible: bo
   return (
     <Modal visible={visible} animationType="slide" statusBarTranslucent><SafeAreaView style={[s.modal, { paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }]}>
       <View style={s.modalHdr}><TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity><Text style={s.modalTitle}>Форматирование</Text><TouchableOpacity onPress={handleSave}><Text style={s.saveTxt}>Готово</Text></TouchableOpacity></View>
-      <ScrollView style={s.modalBody}>
+      <ScrollView style={s.modalBody} contentContainerStyle={{ paddingBottom: 20 }}>
         <Text style={s.verseRef}>{ref}</Text>
         <View style={s.fmtPreview}><HighlightedVerseText text={text} highlights={highlights} fontFamily={font.family} baseStyle={s.fmtPreviewTxt} /></View>
         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
@@ -666,7 +667,7 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
   const getFolderName = (id: number | null) => { if (!id) return null; const f = folders.find(x => x.id === id); return f || null; };
 
   return (
-    <View style={[s.screen, { paddingBottom: 80, backgroundColor: theme.bg }]}>
+    <View style={[s.screen, { backgroundColor: theme.bg }]}>
       <View style={s.header}><Text style={[s.headerTxt, { color: theme.text }]}>📖 Духовный дневник</Text><TouchableOpacity style={[s.addBtn, { backgroundColor: theme.primary }]} onPress={() => openEdit()}><Ionicons name="add" size={28} color={theme.textOn} /></TouchableOpacity></View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.folderBar} contentContainerStyle={{ paddingHorizontal: 12, gap: 8, alignItems: 'center', paddingVertical: 4 }}>
         <TouchableOpacity style={[s.folderChip, !activeFolder && s.folderChipAct]} onPress={() => setActiveFolder(null)}>
@@ -728,7 +729,7 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
       <Modal visible={modal} animationType="slide" statusBarTranslucent>
         <SafeAreaView style={[s.modal, { backgroundColor: theme.bg, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }]}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
           <View style={[s.modalHdr, { borderBottomColor: theme.border }]}><TouchableOpacity onPress={reset}><Ionicons name="close" size={24} color={theme.text} /></TouchableOpacity><Text style={[s.modalTitle, { color: theme.text }]}>{editing ? 'Редактировать' : 'Новая запись'}</Text><TouchableOpacity onPress={save}><Text style={[s.saveTxt, { color: theme.primary }]}>Сохранить</Text></TouchableOpacity></View>
-          <ScrollView ref={scrollRef} style={s.modalBody} keyboardShouldPersistTaps="handled" scrollEventThrottle={16}>
+          <ScrollView ref={scrollRef} style={s.modalBody} contentContainerStyle={{ paddingBottom: 20 }} keyboardShouldPersistTaps="handled" scrollEventThrottle={16}>
             <Text style={s.label}>Категория</Text>
             <View style={s.catPicker}>{(['сон','откровение','мысль','молитва'] as Cat[]).map(c => { const cs = catStyle(c); return <TouchableOpacity key={c} style={[s.catOpt, { backgroundColor: cs.bg }, cat === c && { borderColor: cs.color }]} onPress={() => setCat(c)}><Ionicons name={catIcon(c)} size={16} color={cs.color} /><Text style={[s.catOptTxt, { color: cs.color }]}>{c}</Text></TouchableOpacity>; })}</View>
             {folders.length > 0 && <><Text style={s.label}>Папка</Text>
@@ -882,6 +883,7 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
   const [fastNote, setFastNote] = useState('');
   const [editingFastName, setEditingFastName] = useState(false);
   const [fastName, setFastName] = useState('');
+  const [viewingEntry, setViewingEntry] = useState<Entry | null>(null);
 
   const days = useMemo(() => getMonthDays(year, month), [year, month]);
   const load = useCallback(async () => {
@@ -1133,7 +1135,7 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
   };
 
   return (
-    <View style={[s.screen, { paddingBottom: 80, backgroundColor: theme.bg }]}>
+    <View style={[s.screen, { backgroundColor: theme.bg }]}>
       <View style={s.header}>
         <Text style={[s.headerTxt, { color: theme.text }]}>📅 Календарь</Text>
         <TouchableOpacity onPress={goToday} style={[s.todayBtn, { backgroundColor: theme.accentLight }]}><Text style={[s.todayTxt, { color: theme.primary }]}>Сегодня</Text></TouchableOpacity>
@@ -1189,10 +1191,10 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
             <Text style={s.daySecTitle}>Записи</Text>
           </View>
           {selEs.length > 0 ? selEs.map(e => (
-            <View key={e.id} style={s.dayEntry}>
+            <TouchableOpacity key={e.id} style={s.dayEntry} onPress={() => setViewingEntry(e)}>
               <Text style={s.dayEntryTitle}>{e.title}</Text>
               <Text style={s.dayEntryCat}>{e.category}</Text>
-            </View>
+            </TouchableOpacity>
           )) : <Text style={s.emptyDay}>Нет записей</Text>}
         </View>
         
@@ -1265,7 +1267,7 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
             <Text style={[s.modalTitle, { color: theme.text }]}>Заметка — {fmtDateRu(selDate)}</Text>
             <TouchableOpacity onPress={saveNoteBlocks}><Text style={[s.saveTxt, { color: theme.primary }]}>Сохранить</Text></TouchableOpacity>
           </View>
-          <ScrollView ref={noteScrollRef} style={s.modalBody} keyboardShouldPersistTaps="handled" scrollEventThrottle={16}>
+          <ScrollView ref={noteScrollRef} style={s.modalBody} contentContainerStyle={{ paddingBottom: 20 }} keyboardShouldPersistTaps="handled" scrollEventThrottle={16}>
             {noteBlocks.map((b, i) => <View key={b.id} onLayout={(e) => { noteBlockPos.current[b.id] = e.nativeEvent.layout.y; }}>
               {b.type === 'divider' ? <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 8, gap: 8 }}><View style={{ flex: 1, height: 1, backgroundColor: C.border }} /><TouchableOpacity onPress={() => removeNoteBlock(b.id)}><Ionicons name="close" size={16} color={C.error} /></TouchableOpacity></View>
               : <View style={b.textStyle?.highlight ? { borderLeftWidth: 4, borderLeftColor: TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight)?.bg, borderRadius: 8, marginBottom: 4, paddingLeft: 4 } : undefined}>
@@ -1465,6 +1467,35 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
           </View>
         </View>
       </Modal>
+      {viewingEntry && (
+        <Modal visible animationType="slide" statusBarTranslucent>
+          <SafeAreaView style={[s.modal, { backgroundColor: theme.bg, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }]}>
+            <View style={[s.modalHdr, { borderBottomColor: theme.border }]}>
+              <TouchableOpacity onPress={() => setViewingEntry(null)}><Ionicons name="arrow-back" size={24} color={theme.text} /></TouchableOpacity>
+              <Text style={[s.modalTitle, { color: theme.text }]} numberOfLines={1}>{viewingEntry.title}</Text>
+              <View style={{ width: 24 }} />
+            </View>
+            <ScrollView style={s.viewContent} contentContainerStyle={{ paddingBottom: 20 }}>
+              <View style={s.viewMeta}>
+                <View style={[s.badge, { backgroundColor: catStyle(viewingEntry.category).bg }]}>
+                  <Ionicons name={catIcon(viewingEntry.category) as any} size={14} color={catStyle(viewingEntry.category).color} />
+                  <Text style={[s.badgeTxt, { color: catStyle(viewingEntry.category).color }]}>{viewingEntry.category}</Text>
+                </View>
+                <Text style={[s.viewDate, { color: theme.textMuted }]}>{new Date(viewingEntry.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text>
+              </View>
+              {parseBlocks(viewingEntry.content).map(b => {
+                if (b.type === 'divider') return <View key={b.id} style={{ height: 1, backgroundColor: theme.border, marginVertical: 12 }} />;
+                if (b.type === 'verse') { try { const d = JSON.parse(b.content) as VerseData; const vc = getVColor(b.boxColor); const ref = d.verseEnd ? `${d.book} ${d.chapter}:${d.verse}-${d.verseEnd}` : `${d.book} ${d.chapter}:${d.verse}`; return <View key={b.id} style={[s.verseView, { backgroundColor: vc.bg, borderLeftColor: vc.border }]}><View style={s.verseHdr}><Ionicons name="book" size={16} color={vc.border} /><Text style={[s.verseRef, { color: vc.border }]}>{ref}</Text></View><Text style={[s.verseTxt, { color: theme.text }]}>{d.text}</Text></View>; } catch { return null; } }
+                if (!b.content) return null;
+                const st: any = { fontSize: 16, color: theme.text, lineHeight: 26, marginBottom: 8 };
+                if (b.textStyle?.bold) st.fontWeight = 'bold'; if (b.textStyle?.italic) st.fontStyle = 'italic'; if (b.textStyle?.underline) st.textDecorationLine = 'underline';
+                if (b.textStyle?.highlight) { const hl = TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight); if (hl) st.backgroundColor = hl.bg; }
+                return <Text key={b.id} style={st}>{b.content}</Text>;
+              })}
+            </ScrollView>
+          </SafeAreaView>
+        </Modal>
+      )}
     </View>
   );
 };
@@ -1494,7 +1525,7 @@ const BibleScreen = ({ navTarget, clearNavTarget }: { navTarget: NavTarget | nul
   const verses = book && chap ? BIBLE_VERSES.filter(v => v.book === book.name && v.chapter === chap) : [];
 
   if (!book) return (
-    <View style={[s.screen, { paddingBottom: 80, backgroundColor: theme.bg }]}>
+    <View style={[s.screen, { backgroundColor: theme.bg }]}>
       <View style={s.header}><Text style={[s.headerTxt, { color: theme.text }]}>📜 Библия</Text></View>
       <View style={s.filterRow}>{[['all','Все'],['old','Ветхий'],['new','Новый']].map(([k,l]) => <TouchableOpacity key={k} style={[s.filterBtn, filter === k && s.filterBtnAct, { backgroundColor: filter === k ? theme.primary : theme.surface, borderColor: filter === k ? theme.primary : theme.border }]} onPress={() => setFilter(k as any)}><Text style={[s.filterTxt, filter === k && s.filterTxtAct, { color: filter === k ? theme.textOn : theme.textSec }]}>{l}</Text></TouchableOpacity>)}</View>
       <FlatList data={books} keyExtractor={i => i.name} renderItem={({ item }) => <TouchableOpacity style={[s.bookItem, { backgroundColor: theme.surface }]} onPress={() => setBook(item)}><View><Text style={[s.bookName, { color: theme.text }]}>{item.name}</Text><Text style={[s.bookChaps, { color: theme.textMuted }]}>{item.chapters} глав</Text></View><Ionicons name="chevron-forward" size={20} color={theme.textMuted} /></TouchableOpacity>} contentContainerStyle={s.list} />
@@ -1502,14 +1533,14 @@ const BibleScreen = ({ navTarget, clearNavTarget }: { navTarget: NavTarget | nul
   );
 
   if (!chap) return (
-    <View style={[s.screen, { paddingBottom: 80, backgroundColor: theme.bg }]}>
+    <View style={[s.screen, { backgroundColor: theme.bg }]}>
       <View style={s.header}><TouchableOpacity onPress={() => setBook(null)} style={s.backBtn}><Ionicons name="arrow-back" size={24} color={theme.text} /></TouchableOpacity><Text style={[s.headerTxt, { color: theme.text }]}>{book.name}</Text><View style={{ width: 40 }} /></View>
       <FlatList key="cg" data={Array.from({ length: book.chapters }, (_, i) => i + 1)} numColumns={5} keyExtractor={i => i.toString()} renderItem={({ item }) => <TouchableOpacity style={[s.chapBtn, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => setChap(item)}><Text style={[s.chapTxt, { color: theme.primary }]}>{item}</Text></TouchableOpacity>} contentContainerStyle={s.chapGrid} />
     </View>
   );
 
   return (
-    <View style={[s.screen, { paddingBottom: 80, backgroundColor: theme.bg }]}>
+    <View style={[s.screen, { backgroundColor: theme.bg }]}>
       <View style={s.header}><TouchableOpacity onPress={() => setChap(null)} style={s.backBtn}><Ionicons name="arrow-back" size={24} color={theme.text} /></TouchableOpacity><Text style={[s.headerTxt, { color: theme.text }]}>{book.name} {chap}</Text><View style={{ width: 40 }} /></View>
       {verses.length === 0 ? <View style={s.empty}><Ionicons name="alert-circle-outline" size={48} color={C.border} /><Text style={s.emptyTxt}>Стихи не найдены</Text></View>
       : <FlatList data={verses} keyExtractor={i => i.id} renderItem={({ item }) => (
@@ -1532,7 +1563,7 @@ const SearchScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: numb
   const search = useCallback(() => { if (!q.trim()) { setRes([]); return; } setRes(BIBLE_VERSES.filter(v => v.text.toLowerCase().includes(q.toLowerCase()) || v.book.toLowerCase().includes(q.toLowerCase())).slice(0, 100)); }, [q]);
   useEffect(() => { const t = setTimeout(search, 300); return () => clearTimeout(t); }, [q, search]);
   return (
-    <View style={[s.screen, { paddingBottom: 80, backgroundColor: theme.bg }]}>
+    <View style={[s.screen, { backgroundColor: theme.bg }]}>
       <View style={s.header}><Text style={[s.headerTxt, { color: theme.text }]}>🔍 Поиск</Text></View>
       <View style={[s.searchBox, { backgroundColor: theme.surface, borderColor: theme.border }]}><Ionicons name="search" size={20} color={theme.textMuted} /><TextInput style={[s.searchIn, { color: theme.text }]} value={q} onChangeText={setQ} placeholder="Поиск по Библии..." placeholderTextColor={theme.textMuted} />{q.length > 0 && <TouchableOpacity onPress={() => setQ('')}><Ionicons name="close-circle" size={20} color={theme.textMuted} /></TouchableOpacity>}</View>
       {res.length > 0 && <Text style={[s.resCnt, { color: theme.textMuted }]}>Найдено: {res.length}</Text>}
@@ -1793,7 +1824,7 @@ const GraphView = ({ entries, folders, onClose }: { entries: Entry[]; folders: F
               <Text style={[s.modalTitle, { color: theme.text }]} numberOfLines={1}>{viewEntry.title}</Text>
               <View style={{ width: 24 }} />
             </View>
-            <ScrollView style={s.viewContent}>
+            <ScrollView style={s.viewContent} contentContainerStyle={{ paddingBottom: 20 }}>
               <View style={s.viewMeta}>
                 <View style={[s.badge, { backgroundColor: catStyle(viewEntry.category).bg }]}>
                   <Ionicons name={catIcon(viewEntry.category) as any} size={14} color={catStyle(viewEntry.category).color} />
@@ -1951,7 +1982,7 @@ const SettingsScreen = () => {
   };
 
   return (
-    <View style={[s.screen, { paddingBottom: 80, backgroundColor: theme.bg }]}><View style={s.header}><Text style={[s.headerTxt, { color: theme.text }]}>⚙️ Настройки</Text></View>
+    <View style={[s.screen, { backgroundColor: theme.bg }]}><View style={s.header}><Text style={[s.headerTxt, { color: theme.text }]}>⚙️ Настройки</Text></View>
       <ScrollView style={s.settingsContent}>
         <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>ОБЗОР</Text>
           <View style={s.statsRow}>
@@ -2074,7 +2105,7 @@ const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg }, loading: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: C.bg }, loadingTxt: { marginTop: 16, fontSize: 16, color: C.textSec },
   screen: { flex: 1, backgroundColor: C.bg }, header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, paddingTop: 8 }, headerTxt: { fontSize: 22, fontWeight: '700', color: C.text },
   backBtn: { padding: 8 }, addBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: C.primary, justifyContent: 'center', alignItems: 'center' },
-  tabBar: { flexDirection: 'row', backgroundColor: C.surface, borderTopWidth: 1, borderTopColor: C.border, paddingTop: 6, paddingBottom: 8, position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 1000 }, tabBtn: { flex: 1, alignItems: 'center', paddingVertical: 8 }, tabLbl: { fontSize: 10, marginTop: 2, color: C.textMuted }, tabLblAct: { color: C.primary, fontWeight: '600' },
+  tabBar: { flexDirection: 'row', backgroundColor: C.surface, borderTopWidth: 1, borderTopColor: C.border, paddingTop: 6, paddingBottom: 4 }, tabBtn: { flex: 1, alignItems: 'center', paddingVertical: 8 }, tabLbl: { fontSize: 10, marginTop: 2, color: C.textMuted }, tabLblAct: { color: C.primary, fontWeight: '600' },
   list: { padding: 16, paddingTop: 8 }, empty: { alignItems: 'center', paddingTop: 60 }, emptyTxt: { fontSize: 16, color: C.textMuted, marginTop: 16 },
   toolbar: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.surfaceAlt, paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 1, borderTopColor: C.border },
   toolBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center', borderRadius: 8, marginHorizontal: 2, flexDirection: 'row' }, toolBtnAct: { backgroundColor: C.primary }, toolTxt: { fontSize: 16, fontWeight: '600', color: C.textSec }, toolTxtAct: { color: C.textOn }, toolDiv: { width: 1, height: 24, backgroundColor: C.border, marginHorizontal: 8 },
