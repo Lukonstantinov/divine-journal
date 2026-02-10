@@ -372,7 +372,7 @@ const VerseFormatModal = ({ visible, onClose, verseData, onSave }: { visible: bo
   const handleSave = () => { onSave({ ...verseData, fontFamily: fontId, highlights: highlights.length > 0 ? highlights : undefined }); onClose(); };
 
   return (
-    <Modal visible={visible} animationType="slide" statusBarTranslucent><SafeAreaView style={s.modal}>
+    <Modal visible={visible} animationType="slide" statusBarTranslucent><SafeAreaProvider><SafeAreaView style={s.modal}>
       <View style={s.modalHdr}><TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity><Text style={s.modalTitle}>Форматирование</Text><TouchableOpacity onPress={handleSave}><Text style={s.saveTxt}>Готово</Text></TouchableOpacity></View>
       <ScrollView style={s.modalBody} contentContainerStyle={{ paddingBottom: 20 }}>
         <Text style={s.verseRef}>{ref}</Text>
@@ -413,7 +413,7 @@ const VerseFormatModal = ({ visible, onClose, verseData, onSave }: { visible: bo
           </View>
         ))}</>}
       </ScrollView>
-    </SafeAreaView></Modal>
+    </SafeAreaView></SafeAreaProvider></Modal>
   );
 };
 
@@ -718,15 +718,16 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
       }} contentContainerStyle={s.list} ListEmptyComponent={<View style={s.empty}><Ionicons name="journal-outline" size={64} color={C.border} /><Text style={s.emptyTxt}>Записей пока нет</Text></View>} />
 
       <Modal visible={viewing !== null} animationType="slide" statusBarTranslucent>
-        <SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]}>
+        <SafeAreaProvider><SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]}>
           <View style={[s.modalHdr, { borderBottomColor: theme.border }]}><TouchableOpacity onPress={() => setViewing(null)}><Ionicons name="close" size={24} color={theme.text} /></TouchableOpacity><Text style={[s.modalTitle, { color: theme.text }]} numberOfLines={1}>{viewing?.title}</Text><TouchableOpacity onPress={() => viewing && openEdit(viewing)}><Ionicons name="create-outline" size={24} color={theme.primary} /></TouchableOpacity></View>
-          <ScrollView style={s.viewContent} contentContainerStyle={{ paddingBottom: 40 }}>{viewing && <><View style={s.viewMeta}><View style={[s.badge, { backgroundColor: catStyle(viewing.category).bg }]}><Ionicons name={catIcon(viewing.category)} size={14} color={catStyle(viewing.category).color} /><Text style={[s.badgeTxt, { color: catStyle(viewing.category).color }]}>{viewing.category}</Text></View><Text style={s.viewDate}>{new Date(viewing.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text></View>{parseBlocks(viewing.content).map(b => <View key={b.id}>{b.type === 'text' ? renderText(b) : renderVerse(b)}</View>)}</>}</ScrollView>
-          <TouchableOpacity style={s.delBtn} onPress={() => viewing && del(viewing.id)}><Ionicons name="trash-outline" size={20} color={C.error} /><Text style={s.delTxt}>Удалить</Text></TouchableOpacity>
-        </SafeAreaView>
+          <ScrollView style={s.viewContent} contentContainerStyle={{ paddingBottom: 20 }}>{viewing && <><View style={s.viewMeta}><View style={[s.badge, { backgroundColor: catStyle(viewing.category).bg }]}><Ionicons name={catIcon(viewing.category)} size={14} color={catStyle(viewing.category).color} /><Text style={[s.badgeTxt, { color: catStyle(viewing.category).color }]}>{viewing.category}</Text></View><Text style={s.viewDate}>{new Date(viewing.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text></View>{parseBlocks(viewing.content).map(b => <View key={b.id}>{b.type === 'text' ? renderText(b) : renderVerse(b)}</View>)}
+            <TouchableOpacity style={[s.delBtn, { marginTop: 20 }]} onPress={() => viewing && del(viewing.id)}><Ionicons name="trash-outline" size={20} color={C.error} /><Text style={s.delTxt}>Удалить</Text></TouchableOpacity>
+          </>}</ScrollView>
+        </SafeAreaView></SafeAreaProvider>
       </Modal>
 
       <Modal visible={modal} animationType="slide" statusBarTranslucent>
-        <SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <SafeAreaProvider><SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
           <View style={[s.modalHdr, { borderBottomColor: theme.border }]}><TouchableOpacity onPress={reset}><Ionicons name="close" size={24} color={theme.text} /></TouchableOpacity><Text style={[s.modalTitle, { color: theme.text }]}>{editing ? 'Редактировать' : 'Новая запись'}</Text><TouchableOpacity onPress={save}><Text style={[s.saveTxt, { color: theme.primary }]}>Сохранить</Text></TouchableOpacity></View>
           <ScrollView ref={scrollRef} style={s.modalBody} contentContainerStyle={{ paddingBottom: 20 }} keyboardShouldPersistTaps="handled" scrollEventThrottle={16}>
             <Text style={s.label}>Категория</Text>
@@ -750,7 +751,7 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
             <View style={{ height: 200 }} />
           </ScrollView>
           {activeId && keyboardVisible && <RTToolbar style={tStyle} onToggle={toggleStyle} onSize={setFontSize} onHighlight={setHighlight} onDivider={addDivider} />}
-        </KeyboardAvoidingView></SafeAreaView>
+        </KeyboardAvoidingView></SafeAreaView></SafeAreaProvider>
       </Modal>
 
       <Modal visible={colorPick !== null} transparent animationType="fade">
@@ -836,7 +837,7 @@ const VersePickerModal = ({ visible, onClose, onSelect }: { visible: boolean; on
   const results = q.length > 2 ? BIBLE_VERSES.filter(v => v.text.toLowerCase().includes(q.toLowerCase()) || v.book.toLowerCase().includes(q.toLowerCase())).slice(0, 50) : [];
 
   return (
-    <Modal visible={visible} animationType="slide" statusBarTranslucent><SafeAreaView style={s.modal}>
+    <Modal visible={visible} animationType="slide" statusBarTranslucent><SafeAreaProvider><SafeAreaView style={s.modal}>
       <View style={s.modalHdr}><TouchableOpacity onPress={close}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity><Text style={s.modalTitle}>Выбрать стихи {sel.size > 0 && `(${sel.size})`}</Text>{sel.size > 0 ? <TouchableOpacity onPress={confirm}><Text style={s.saveTxt}>Добавить</Text></TouchableOpacity> : <View style={{ width: 60 }} />}</View>
       {sel.size > 0 && <View style={s.colorRow}><Text style={s.colorLbl}>Цвет:</Text>{VERSE_COLORS.map(c => <TouchableOpacity key={c.id} style={[s.colorItem, { backgroundColor: c.bg, borderColor: c.border }, col === c.id && s.colorItemAct]} onPress={() => setCol(c.id)} />)}</View>}
       <View style={s.searchBox}><Ionicons name="search" size={20} color={C.textMuted} /><TextInput style={s.searchIn} value={q} onChangeText={setQ} placeholder="Поиск..." placeholderTextColor={C.textMuted} />{q.length > 0 && <TouchableOpacity onPress={() => setQ('')}><Ionicons name="close-circle" size={20} color={C.textMuted} /></TouchableOpacity>}</View>
@@ -844,7 +845,7 @@ const VersePickerModal = ({ visible, onClose, onSelect }: { visible: boolean; on
       : !book ? <FlatList data={BIBLE_BOOKS} keyExtractor={i => i.name} renderItem={({ item }) => <TouchableOpacity style={s.pickItem} onPress={() => setBook(item)}><Text style={s.pickTxt}>{item.name}</Text><Text style={s.pickSub}>{item.chapters} глав</Text></TouchableOpacity>} contentContainerStyle={s.list} />
       : !chap ? <View style={{ flex: 1 }}><TouchableOpacity style={s.backNav} onPress={() => setBook(null)}><Ionicons name="arrow-back" size={20} color={C.primary} /><Text style={s.backTxt}>{book.name}</Text></TouchableOpacity><FlatList key="ch" data={Array.from({ length: book.chapters }, (_, i) => i + 1)} numColumns={5} keyExtractor={i => i.toString()} renderItem={({ item }) => <TouchableOpacity style={s.chapBtn} onPress={() => setChap(item)}><Text style={s.chapTxt}>{item}</Text></TouchableOpacity>} contentContainerStyle={s.chapGrid} /></View>
       : <View style={{ flex: 1 }}><TouchableOpacity style={s.backNav} onPress={() => setChap(null)}><Ionicons name="arrow-back" size={20} color={C.primary} /><Text style={s.backTxt}>{book.name} {chap}</Text></TouchableOpacity><FlatList data={chapVs()} keyExtractor={i => i.id} renderItem={({ item }) => <TouchableOpacity style={[s.vpItem, sel.has(item.id) && s.vpItemSel]} onPress={() => toggle(item)}><View style={s.vpCheck}>{sel.has(item.id) ? <Ionicons name="checkmark" size={16} color={C.primary} /> : null}</View><Text style={s.vpNum}>{item.verse}</Text><Text style={s.vpTxt}>{item.text}</Text></TouchableOpacity>} contentContainerStyle={s.list} /></View>}
-    </SafeAreaView></Modal>
+    </SafeAreaView></SafeAreaProvider></Modal>
   );
 };
 
@@ -1260,7 +1261,7 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
       </Modal>
 
       <Modal visible={editNote} animationType="slide" statusBarTranslucent>
-        <SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <SafeAreaProvider><SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
           <View style={[s.modalHdr, { borderBottomColor: theme.border }]}>
             <TouchableOpacity onPress={() => setEditNote(false)}><Ionicons name="close" size={24} color={theme.text} /></TouchableOpacity>
             <Text style={[s.modalTitle, { color: theme.text }]}>Заметка — {fmtDateRu(selDate)}</Text>
@@ -1279,7 +1280,7 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
             <View style={{ height: 200 }} />
           </ScrollView>
           {noteActiveId && noteKbVisible && <RTToolbar style={noteTStyle} onToggle={toggleNoteStyle} onSize={setNoteFontSize} onHighlight={setNoteHighlight} onDivider={addNoteDivider} />}
-        </KeyboardAvoidingView></SafeAreaView>
+        </KeyboardAvoidingView></SafeAreaView></SafeAreaProvider>
       </Modal>
 
       <Modal visible={showPlanGen} animationType="slide" transparent>
@@ -1468,7 +1469,7 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
       </Modal>
       {viewingEntry && (
         <Modal visible animationType="slide" statusBarTranslucent>
-          <SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]}>
+          <SafeAreaProvider><SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]}>
             <View style={[s.modalHdr, { borderBottomColor: theme.border }]}>
               <TouchableOpacity onPress={() => setViewingEntry(null)}><Ionicons name="arrow-back" size={24} color={theme.text} /></TouchableOpacity>
               <Text style={[s.modalTitle, { color: theme.text }]} numberOfLines={1}>{viewingEntry.title}</Text>
@@ -1492,7 +1493,7 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
                 return <Text key={b.id} style={st}>{b.content}</Text>;
               })}
             </ScrollView>
-          </SafeAreaView>
+          </SafeAreaView></SafeAreaProvider>
         </Modal>
       )}
     </View>
@@ -1746,7 +1747,7 @@ const GraphView = ({ entries, folders, onClose }: { entries: Entry[]; folders: F
   };
 
   return (
-    <Modal visible animationType="slide" statusBarTranslucent><SafeAreaView style={s.modal}>
+    <Modal visible animationType="slide" statusBarTranslucent><SafeAreaProvider><SafeAreaView style={s.modal}>
       <View style={s.modalHdr}>
         <TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity>
         <Text style={s.modalTitle}>Граф связей</Text>
@@ -1817,7 +1818,7 @@ const GraphView = ({ entries, folders, onClose }: { entries: Entry[]; folders: F
       </ScrollView>
       {viewEntry && (
         <Modal visible animationType="slide" statusBarTranslucent>
-          <SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]}>
+          <SafeAreaProvider><SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]}>
             <View style={[s.modalHdr, { borderBottomColor: theme.border }]}>
               <TouchableOpacity onPress={() => setViewEntry(null)}><Ionicons name="arrow-back" size={24} color={theme.text} /></TouchableOpacity>
               <Text style={[s.modalTitle, { color: theme.text }]} numberOfLines={1}>{viewEntry.title}</Text>
@@ -1833,10 +1834,10 @@ const GraphView = ({ entries, folders, onClose }: { entries: Entry[]; folders: F
               </View>
               {parseBlocks(viewEntry.content).map(b => <View key={b.id}>{renderEntryBlock(b)}</View>)}
             </ScrollView>
-          </SafeAreaView>
+          </SafeAreaView></SafeAreaProvider>
         </Modal>
       )}
-    </SafeAreaView></Modal>
+    </SafeAreaView></SafeAreaProvider></Modal>
   );
 };
 
@@ -1904,7 +1905,7 @@ const SettingsScreen = () => {
   const exportData = async () => {
     try {
       const data = {
-        version: '3.3',
+        version: '3.4',
         exportDate: new Date().toISOString(),
         entries: await db.getAllAsync('SELECT * FROM entries'),
         bookmarks: await db.getAllAsync('SELECT * FROM bookmarks'),
@@ -2093,7 +2094,7 @@ const SettingsScreen = () => {
           </TouchableOpacity>
         </View>
 
-        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 3.3</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 3.4</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
       </ScrollView>
       {showGraph && <GraphView entries={allEntries} folders={allFolders} onClose={() => setShowGraph(false)} />}
     </View>

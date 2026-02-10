@@ -131,7 +131,7 @@ app_settings     (key TEXT PK, value TEXT)
 - Graph view: Force-directed layout (60 iterations) computed in JS, rendered with react-native-svg
 
 ### Version Management
-- **Current version: v3.3**
+- **Current version: v3.4**
 - **IMPORTANT**: On every code change that will be built into an APK, bump the version number (patch increment: 3.3 → 3.4 → 3.5 etc.)
 - Update version in **3 places**: `App.tsx` export `version` field, `App.tsx` "Версия X.X" display string, and `app.json` `"version"` field
 - This ensures the user can always verify they have the latest build installed
