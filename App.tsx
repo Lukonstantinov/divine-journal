@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Modal, ScrollView, Alert, StatusBar, SafeAreaView, KeyboardAvoidingView, Platform, Dimensions, AppState } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Modal, ScrollView, Alert, StatusBar, KeyboardAvoidingView, Platform, Dimensions, AppState } from 'react-native';
 import * as SQLite from 'expo-sqlite';
 import { Ionicons } from '@expo/vector-icons';
 import { BIBLE_VERSES, BIBLE_BOOKS, BibleVerse, BibleBook } from './BibleVerses';
-import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -86,17 +86,21 @@ const getMonthDays = (y: number, m: number) => {
 const catStyle = (c: Cat) => ({ сон: { bg: C.dreamBg, color: C.success }, откровение: { bg: C.revBg, color: C.warning }, мысль: { bg: C.thoughtBg, color: C.primary }, молитва: { bg: C.prayerBg, color: '#7B4B94' } }[c]);
 const catIcon = (c: Cat) => ({ сон: 'moon', откровение: 'flash', мысль: 'bulb', молитва: 'heart' }[c]);
 
+// Shared block renderers
+const renderVerseBlock = (b: Block) => { try { const d = JSON.parse(b.content) as VerseData, vc = getVColor(b.boxColor), font = getVFont(d.fontFamily), ref = d.verseEnd ? `${d.book} ${d.chapter}:${d.verse}-${d.verseEnd}` : `${d.book} ${d.chapter}:${d.verse}`; return <View style={[s.verseView, { backgroundColor: vc.bg, borderLeftColor: vc.border }]}><View style={s.verseHdr}><Ionicons name="book" size={16} color={vc.border} /><Text style={[s.verseRef, { color: vc.border }]}>{ref}</Text>{d.fontFamily && <Text style={s.verseFontLabel}>{font.name}</Text>}</View><HighlightedVerseText text={d.text} highlights={d.highlights} fontFamily={font.family} baseStyle={s.verseTxt} /></View>; } catch { return null; } };
+const renderTextBlock = (b: Block) => { if (!b.content) return null; const st: any = { ...s.viewTxt }; if (b.textStyle?.bold) st.fontWeight = 'bold'; if (b.textStyle?.italic) st.fontStyle = 'italic'; if (b.textStyle?.underline) st.textDecorationLine = 'underline'; if (b.textStyle?.fontSize) st.fontSize = getFSize(b.textStyle.fontSize); return <Text style={st}>{b.content}</Text>; };
+
 // SafeArea Wrapper Component
 const SafeAreaWrapper = ({ children }: { children: React.ReactNode }) => {
   const insets = useSafeAreaInsets();
-  
+
   return (
-    <SafeAreaView style={[s.container, { 
+    <View style={[s.container, {
       paddingTop: insets.top,
-      paddingBottom: insets.bottom > 0 ? insets.bottom : Platform.OS === 'android' ? 16 : 4 
+      paddingBottom: insets.bottom
     }]}>
       {children}
-    </SafeAreaView>
+    </View>
   );
 };
 
@@ -373,12 +377,11 @@ const JournalScreen = () => {
   const preview = (c: string) => parseBlocks(c).filter(b => b.type === 'text').map(b => b.content).join(' ').substring(0, 100);
   const vCount = (c: string) => parseBlocks(c).filter(b => b.type === 'verse').length;
 
-  const renderVerse = (b: Block) => { try { const d = JSON.parse(b.content) as VerseData, vc = getVColor(b.boxColor), font = getVFont(d.fontFamily), ref = d.verseEnd ? `${d.book} ${d.chapter}:${d.verse}-${d.verseEnd}` : `${d.book} ${d.chapter}:${d.verse}`; return <View style={[s.verseView, { backgroundColor: vc.bg, borderLeftColor: vc.border }]}><View style={s.verseHdr}><Ionicons name="book" size={16} color={vc.border} /><Text style={[s.verseRef, { color: vc.border }]}>{ref}</Text>{d.fontFamily && <Text style={s.verseFontLabel}>{font.name}</Text>}</View><HighlightedVerseText text={d.text} highlights={d.highlights} fontFamily={font.family} baseStyle={s.verseTxt} /></View>; } catch { return null; } };
-
-  const renderText = (b: Block) => { if (!b.content) return null; const st: any = { ...s.viewTxt }; if (b.textStyle?.bold) st.fontWeight = 'bold'; if (b.textStyle?.italic) st.fontStyle = 'italic'; if (b.textStyle?.underline) st.textDecorationLine = 'underline'; if (b.textStyle?.fontSize) st.fontSize = getFSize(b.textStyle.fontSize); return <Text style={st}>{b.content}</Text>; };
+  const renderVerse = renderVerseBlock;
+  const renderText = renderTextBlock;
 
   return (
-    <View style={[s.screen, { paddingBottom: 80 }]}>
+    <View style={s.screen}>
       <View style={s.header}><Text style={s.headerTxt}>📖 Духовный дневник</Text><TouchableOpacity style={s.addBtn} onPress={() => openEdit()}><Ionicons name="add" size={28} color={C.textOn} /></TouchableOpacity></View>
       <FlatList data={entries} keyExtractor={i => i.id.toString()} renderItem={({ item }) => {
         const cs = catStyle(item.category), vc = vCount(item.content), pv = preview(item.content);
@@ -402,7 +405,7 @@ const JournalScreen = () => {
       <Modal visible={viewing !== null} animationType="slide">
         <SafeAreaView style={s.modal}>
           <View style={s.modalHdr}><TouchableOpacity onPress={() => setViewing(null)}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity><Text style={s.modalTitle} numberOfLines={1}>{viewing?.title}</Text><TouchableOpacity onPress={() => viewing && openEdit(viewing)}><Ionicons name="create-outline" size={24} color={C.primary} /></TouchableOpacity></View>
-          <ScrollView style={s.viewContent}>{viewing && <><View style={s.viewMeta}><View style={[s.badge, { backgroundColor: catStyle(viewing.category).bg }]}><Ionicons name={catIcon(viewing.category)} size={14} color={catStyle(viewing.category).color} /><Text style={[s.badgeTxt, { color: catStyle(viewing.category).color }]}>{viewing.category}</Text></View><Text style={s.viewDate}>{new Date(viewing.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text></View>{parseBlocks(viewing.content).map(b => <View key={b.id}>{b.type === 'text' ? renderText(b) : renderVerse(b)}</View>)}</>}</ScrollView>
+          <ScrollView style={s.viewContent} contentContainerStyle={{ paddingBottom: 20 }}>{viewing && <><View style={s.viewMeta}><View style={[s.badge, { backgroundColor: catStyle(viewing.category).bg }]}><Ionicons name={catIcon(viewing.category)} size={14} color={catStyle(viewing.category).color} /><Text style={[s.badgeTxt, { color: catStyle(viewing.category).color }]}>{viewing.category}</Text></View><Text style={s.viewDate}>{new Date(viewing.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text></View>{parseBlocks(viewing.content).map(b => <View key={b.id}>{b.type === 'text' ? renderText(b) : renderVerse(b)}</View>)}</>}</ScrollView>
           <TouchableOpacity style={s.delBtn} onPress={() => viewing && del(viewing.id)}><Ionicons name="trash-outline" size={20} color={C.error} /><Text style={s.delTxt}>Удалить</Text></TouchableOpacity>
         </SafeAreaView>
       </Modal>
@@ -488,6 +491,7 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
   const [fastNote, setFastNote] = useState('');
   const [editingFastName, setEditingFastName] = useState(false);
   const [fastName, setFastName] = useState('');
+  const [viewingEntry, setViewingEntry] = useState<Entry | null>(null);
 
   const days = useMemo(() => getMonthDays(year, month), [year, month]);
   const load = useCallback(async () => {
@@ -642,7 +646,7 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
   };
 
   return (
-    <View style={[s.screen, { paddingBottom: 80 }]}>
+    <View style={s.screen}>
       <View style={s.header}>
         <Text style={s.headerTxt}>📅 Календарь</Text>
         <TouchableOpacity onPress={goToday} style={s.todayBtn}><Text style={s.todayTxt}>Сегодня</Text></TouchableOpacity>
@@ -698,10 +702,10 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
             <Text style={s.daySecTitle}>Записи</Text>
           </View>
           {selEs.length > 0 ? selEs.map(e => (
-            <View key={e.id} style={s.dayEntry}>
+            <TouchableOpacity key={e.id} style={s.dayEntry} onPress={() => setViewingEntry(e)}>
               <Text style={s.dayEntryTitle}>{e.title}</Text>
-              <Text style={s.dayEntryCat}>{e.category}</Text>
-            </View>
+              <View style={[s.badge, { backgroundColor: catStyle(e.category).bg }]}><Ionicons name={catIcon(e.category)} size={12} color={catStyle(e.category).color} /><Text style={[s.badgeTxt, { color: catStyle(e.category).color, fontSize: 11 }]}>{e.category}</Text></View>
+            </TouchableOpacity>
           )) : <Text style={s.emptyDay}>Нет записей</Text>}
         </View>
         
@@ -964,6 +968,13 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
           </View>
         </View>
       </Modal>
+
+      <Modal visible={viewingEntry !== null} animationType="slide">
+        <SafeAreaView style={s.modal}>
+          <View style={s.modalHdr}><TouchableOpacity onPress={() => setViewingEntry(null)}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity><Text style={s.modalTitle} numberOfLines={1}>{viewingEntry?.title}</Text><View style={{ width: 24 }} /></View>
+          <ScrollView style={s.viewContent} contentContainerStyle={{ paddingBottom: 20 }}>{viewingEntry && <><View style={s.viewMeta}><View style={[s.badge, { backgroundColor: catStyle(viewingEntry.category).bg }]}><Ionicons name={catIcon(viewingEntry.category)} size={14} color={catStyle(viewingEntry.category).color} /><Text style={[s.badgeTxt, { color: catStyle(viewingEntry.category).color }]}>{viewingEntry.category}</Text></View><Text style={s.viewDate}>{new Date(viewingEntry.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text></View>{parseBlocks(viewingEntry.content).map(b => <View key={b.id}>{b.type === 'text' ? renderTextBlock(b) : renderVerseBlock(b)}</View>)}</>}</ScrollView>
+        </SafeAreaView>
+      </Modal>
     </View>
   );
 };
@@ -991,7 +1002,7 @@ const BibleScreen = ({ navTarget, clearNavTarget }: { navTarget: NavTarget | nul
   const verses = book && chap ? BIBLE_VERSES.filter(v => v.book === book.name && v.chapter === chap) : [];
 
   if (!book) return (
-    <View style={[s.screen, { paddingBottom: 80 }]}>
+    <View style={s.screen}>
       <View style={s.header}><Text style={s.headerTxt}>📜 Библия</Text></View>
       <View style={s.filterRow}>{[['all','Все'],['old','Ветхий'],['new','Новый']].map(([k,l]) => <TouchableOpacity key={k} style={[s.filterBtn, filter === k && s.filterBtnAct]} onPress={() => setFilter(k as any)}><Text style={[s.filterTxt, filter === k && s.filterTxtAct]}>{l}</Text></TouchableOpacity>)}</View>
       <FlatList data={books} keyExtractor={i => i.name} renderItem={({ item }) => <TouchableOpacity style={s.bookItem} onPress={() => setBook(item)}><View><Text style={s.bookName}>{item.name}</Text><Text style={s.bookChaps}>{item.chapters} глав</Text></View><Ionicons name="chevron-forward" size={20} color={C.textMuted} /></TouchableOpacity>} contentContainerStyle={s.list} />
@@ -999,14 +1010,14 @@ const BibleScreen = ({ navTarget, clearNavTarget }: { navTarget: NavTarget | nul
   );
 
   if (!chap) return (
-    <View style={[s.screen, { paddingBottom: 80 }]}>
+    <View style={s.screen}>
       <View style={s.header}><TouchableOpacity onPress={() => setBook(null)} style={s.backBtn}><Ionicons name="arrow-back" size={24} color={C.text} /></TouchableOpacity><Text style={s.headerTxt}>{book.name}</Text><View style={{ width: 40 }} /></View>
       <FlatList key="cg" data={Array.from({ length: book.chapters }, (_, i) => i + 1)} numColumns={5} keyExtractor={i => i.toString()} renderItem={({ item }) => <TouchableOpacity style={s.chapBtn} onPress={() => setChap(item)}><Text style={s.chapTxt}>{item}</Text></TouchableOpacity>} contentContainerStyle={s.chapGrid} />
     </View>
   );
 
   return (
-    <View style={[s.screen, { paddingBottom: 80 }]}>
+    <View style={s.screen}>
       <View style={s.header}><TouchableOpacity onPress={() => setChap(null)} style={s.backBtn}><Ionicons name="arrow-back" size={24} color={C.text} /></TouchableOpacity><Text style={s.headerTxt}>{book.name} {chap}</Text><View style={{ width: 40 }} /></View>
       {verses.length === 0 ? <View style={s.empty}><Ionicons name="alert-circle-outline" size={48} color={C.border} /><Text style={s.emptyTxt}>Стихи не найдены</Text></View>
       : <FlatList data={verses} keyExtractor={i => i.id} renderItem={({ item }) => (
@@ -1027,7 +1038,7 @@ const SearchScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: numb
   const search = useCallback(() => { if (!q.trim()) { setRes([]); return; } setRes(BIBLE_VERSES.filter(v => v.text.toLowerCase().includes(q.toLowerCase()) || v.book.toLowerCase().includes(q.toLowerCase())).slice(0, 100)); }, [q]);
   useEffect(() => { const t = setTimeout(search, 300); return () => clearTimeout(t); }, [q, search]);
   return (
-    <View style={[s.screen, { paddingBottom: 80 }]}>
+    <View style={s.screen}>
       <View style={s.header}><Text style={s.headerTxt}>🔍 Поиск</Text></View>
       <View style={s.searchBox}><Ionicons name="search" size={20} color={C.textMuted} /><TextInput style={s.searchIn} value={q} onChangeText={setQ} placeholder="Поиск по Библии..." placeholderTextColor={C.textMuted} />{q.length > 0 && <TouchableOpacity onPress={() => setQ('')}><Ionicons name="close-circle" size={20} color={C.textMuted} /></TouchableOpacity>}</View>
       {res.length > 0 && <Text style={s.resCnt}>Найдено: {res.length}</Text>}
@@ -1047,7 +1058,7 @@ const SettingsScreen = () => {
   const [stats, setStats] = useState({ e: 0, b: 0, r: 0 });
   useEffect(() => { (async () => { const e = await db.getFirstAsync<{ c: number }>('SELECT COUNT(*) as c FROM entries'); const b = await db.getFirstAsync<{ c: number }>('SELECT COUNT(*) as c FROM bookmarks'); const r = await db.getFirstAsync<{ c: number }>('SELECT COUNT(*) as c FROM reading_plan WHERE completed=1'); setStats({ e: e?.c || 0, b: b?.c || 0, r: r?.c || 0 }); })(); }, []);
   return (
-    <View style={[s.screen, { paddingBottom: 80 }]}><View style={s.header}><Text style={s.headerTxt}>⚙️ Настройки</Text></View>
+    <View style={s.screen}><View style={s.header}><Text style={s.headerTxt}>⚙️ Настройки</Text></View>
       <ScrollView style={s.settingsContent}>
         <View style={s.section}><Text style={s.secTitle}>СТАТИСТИКА</Text><View style={s.statsRow}><View style={s.statCard}><Ionicons name="journal" size={24} color={C.primary} /><Text style={s.statNum}>{stats.e}</Text><Text style={s.statLbl}>Записей</Text></View><View style={s.statCard}><Ionicons name="bookmark" size={24} color={C.warning} /><Text style={s.statNum}>{stats.b}</Text><Text style={s.statLbl}>Закладок</Text></View><View style={s.statCard}><Ionicons name="checkmark-circle" size={24} color={C.success} /><Text style={s.statNum}>{stats.r}</Text><Text style={s.statLbl}>Прочитано</Text></View></View></View>
         <View style={s.section}><Text style={s.secTitle}>О ПРИЛОЖЕНИИ</Text><View style={s.aboutCard}><Ionicons name="book" size={40} color={C.primary} /><Text style={s.appName}>Divine Journal</Text><Text style={s.appVer}>Версия 3.2</Text><Text style={s.appDesc}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
@@ -1060,7 +1071,7 @@ const s = StyleSheet.create({
   container: { flex: 1, backgroundColor: C.bg }, loading: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: C.bg }, loadingTxt: { marginTop: 16, fontSize: 16, color: C.textSec },
   screen: { flex: 1, backgroundColor: C.bg }, header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, paddingTop: 8 }, headerTxt: { fontSize: 22, fontWeight: '700', color: C.text },
   backBtn: { padding: 8 }, addBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: C.primary, justifyContent: 'center', alignItems: 'center' },
-  tabBar: { flexDirection: 'row', backgroundColor: C.surface, borderTopWidth: 1, borderTopColor: C.border, paddingTop: 6, paddingBottom: Platform.OS === 'android' ? 24 : 4, position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 1000 }, tabBtn: { flex: 1, alignItems: 'center', paddingVertical: 8 }, tabLbl: { fontSize: 10, marginTop: 2, color: C.textMuted }, tabLblAct: { color: C.primary, fontWeight: '600' },
+  tabBar: { flexDirection: 'row', backgroundColor: C.surface, borderTopWidth: 1, borderTopColor: C.border, paddingTop: 6, paddingBottom: 4 }, tabBtn: { flex: 1, alignItems: 'center', paddingVertical: 8 }, tabLbl: { fontSize: 10, marginTop: 2, color: C.textMuted }, tabLblAct: { color: C.primary, fontWeight: '600' },
   list: { padding: 16, paddingTop: 8 }, empty: { alignItems: 'center', paddingTop: 60 }, emptyTxt: { fontSize: 16, color: C.textMuted, marginTop: 16 },
   toolbar: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.surfaceAlt, paddingHorizontal: 12, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: C.border },
   toolBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center', borderRadius: 8, marginHorizontal: 2, flexDirection: 'row' }, toolBtnAct: { backgroundColor: C.primary }, toolTxt: { fontSize: 16, fontWeight: '600', color: C.textSec }, toolTxtAct: { color: C.textOn }, toolDiv: { width: 1, height: 24, backgroundColor: C.border, marginHorizontal: 8 },
