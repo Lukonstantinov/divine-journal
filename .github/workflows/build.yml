@@ -7,6 +7,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      NODE_OPTIONS: '--max-old-space-size=4096'
     steps:
       - uses: actions/checkout@v4
 
@@ -41,8 +43,8 @@ jobs:
           GRADLE_OPTS: '-Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=512m'
         run: ./gradlew assembleDebug --stacktrace --no-daemon
 
-      - name: Upload Release APK
-        if: success()
+      - name: Upload APK
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: divine-journal.apk
