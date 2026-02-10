@@ -13,7 +13,7 @@ A Russian-language spiritual journaling and Bible study mobile app built with Re
 - **Charts/Graphics**: `react-native-svg` (graph view)
 - **File I/O**: `expo-file-system` v19 (new File/Paths API), `expo-sharing`, `expo-document-picker`
 - **Testing**: Jest + ts-jest (run via `npm test`)
-- **Build**: EAS Build (see `eas.json`)
+- **Build**: GitHub Actions APK build (`.github/workflows/build.yml`) — push to main triggers `expo prebuild` + Gradle `assembleRelease`
 
 ## Project Structure
 
@@ -130,8 +130,13 @@ app_settings     (key TEXT PK, value TEXT)
 - Daily verse: Deterministic selection using date-based hash `(seed * 2654435761) | 0`
 - Graph view: Force-directed layout (60 iterations) computed in JS, rendered with react-native-svg
 
+### Version Management
+- **Current version: v3.3**
+- **IMPORTANT**: On every code change that will be built into an APK, bump the version number (patch increment: 3.3 → 3.4 → 3.5 etc.)
+- Update version in **3 places**: `App.tsx` export `version` field, `App.tsx` "Версия X.X" display string, and `app.json` `"version"` field
+- This ensures the user can always verify they have the latest build installed
+
 ### Style conventions
-- App version: v3.2
 - UI theme: warm earth tones with light/dark/sepia modes (brown primary #8B4513, tan accent #D4A574)
 - All user-facing strings must be in Russian
 - Style naming: terse convention in the `s` object (e.g., `headerTxt`, `cardHdr`, `badgeTxt`)
