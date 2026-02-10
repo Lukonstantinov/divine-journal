@@ -96,6 +96,13 @@ export const fmtRelTime = (dateStr: string): string => {
 
 export const scaledSz = (base: number, scale: number) => Math.round(base * scale);
 
+export const fmtTime = (h: number, m: number): string =>
+  `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+
+export const wrapHour = (h: number): number => ((h % 24) + 24) % 24;
+
+export const wrapMinute = (m: number, step: number = 5): number => ((m % 60) + 60) % 60;
+
 export const parseNote = (n: string): Block[] => {
   try {
     const p = JSON.parse(n);

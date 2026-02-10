@@ -131,7 +131,7 @@ app_settings     (key TEXT PK, value TEXT)
 - Graph view: Force-directed layout (60 iterations) computed in JS, rendered with react-native-svg
 
 ### Version Management
-- **Current version: v3.4**
+- **Current version: v3.6**
 - **IMPORTANT**: On every code change that will be built into an APK, bump the version number (patch increment: 3.3 → 3.4 → 3.5 etc.)
 - Update version in **3 places**: `App.tsx` export `version` field, `App.tsx` "Версия X.X" display string, and `app.json` `"version"` field
 - This ensures the user can always verify they have the latest build installed
@@ -164,13 +164,12 @@ See `ENHANCEMENT_PLAN.md` for the full roadmap with code-level implementation de
 - **Phase 1**: Critical UX fixes (toolbar above keyboard, scroll fixes)
 - **Phase 2**: Folder system for organizing entries
 - **Phase 3**: Statistics dashboard with charts
-- **Phase 4**: Daily Bible verse widget (reading reminders pending)
+- **Phase 4**: Daily Bible verse widget + reading reminders
 - **Phase 5**: Theme system (light/dark/sepia) + font scaling
 - **Phase 6**: Advanced editing (highlights, dividers, block reorder, rich daily notes)
 - **Phase 7**: Graph view for entry connections
 - **A1**: Export/import data
 
 ### Remaining
-- **Phase 4**: Reading reminders (expo-notifications)
 - **A2**: Voice-to-text (keyboard built-in may suffice)
 - **A4**: Cloud backup
