@@ -1300,6 +1300,23 @@ Use this to track progress across sessions:
 - [x] **A3**: Password/biometric protection — SKIPPED (user decision)
 - [ ] **A4**: Cloud backup
 
+### Next Wave (v3.6–v3.9)
+
+See **[`FEATURE_PLAN_V4.md`](./FEATURE_PLAN_V4.md)** for the full implementation plan covering:
+
+| Phase | Feature | Version |
+|-------|---------|---------|
+| A | Bible Chapter Navigation (next/prev + swipe) | v3.6 |
+| B | Pin Important Entries | v3.6 |
+| C | Archive Old Entries | v3.6 |
+| D | Swipe Calendar Navigation | v3.7 |
+| E | Calendar Events with Color/Gradient | v3.7 |
+| J | Gradient/Colored Notes | v3.7 |
+| F | Undo/Redo in Editor | v3.8 |
+| G | Linked Entries + Reading Plan Progress | v3.8 |
+| H | Achievement System with Awards | v3.9 |
+| I | Monthly/Yearly Review | v3.9 |
+
 ---
 
 ## Notes for Implementing Claude Sessions
