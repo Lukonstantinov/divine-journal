@@ -309,3 +309,46 @@ describe('calcStreak', () => {
     expect(calcStreak([twoDaysAgo, today, yesterday])).toBe(3);
   });
 });
+
+describe('fmtRelTime', () => {
+  const { fmtRelTime } = require('../utils');
+
+  it('returns "только что" for recent time', () => {
+    const now = new Date().toISOString();
+    expect(fmtRelTime(now)).toBe('только что');
+  });
+
+  it('returns minutes ago for <60 min', () => {
+    const d = new Date(Date.now() - 5 * 60000).toISOString();
+    expect(fmtRelTime(d)).toBe('5 мин. назад');
+  });
+
+  it('returns hours ago for <24 hours', () => {
+    const d = new Date(Date.now() - 3 * 3600000).toISOString();
+    expect(fmtRelTime(d)).toBe('3 ч. назад');
+  });
+
+  it('returns "вчера" for 1 day ago', () => {
+    const d = new Date(Date.now() - 25 * 3600000).toISOString();
+    expect(fmtRelTime(d)).toBe('вчера');
+  });
+
+  it('returns days ago for <7 days', () => {
+    const d = new Date(Date.now() - 4 * 86400000).toISOString();
+    expect(fmtRelTime(d)).toBe('4 дн. назад');
+  });
+});
+
+describe('scaledSz', () => {
+  const { scaledSz } = require('../utils');
+
+  it('scales font size by multiplier', () => {
+    expect(scaledSz(16, 1.0)).toBe(16);
+    expect(scaledSz(16, 1.2)).toBe(19);
+    expect(scaledSz(16, 0.8)).toBe(13);
+  });
+
+  it('rounds to nearest integer', () => {
+    expect(scaledSz(15, 1.1)).toBe(17);
+  });
+});
