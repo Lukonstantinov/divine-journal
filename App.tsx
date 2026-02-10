@@ -372,7 +372,7 @@ const VerseFormatModal = ({ visible, onClose, verseData, onSave }: { visible: bo
   const handleSave = () => { onSave({ ...verseData, fontFamily: fontId, highlights: highlights.length > 0 ? highlights : undefined }); onClose(); };
 
   return (
-    <Modal visible={visible} animationType="slide" statusBarTranslucent><SafeAreaView style={[s.modal, { paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }]}>
+    <Modal visible={visible} animationType="slide" statusBarTranslucent><SafeAreaView style={s.modal}>
       <View style={s.modalHdr}><TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity><Text style={s.modalTitle}>Форматирование</Text><TouchableOpacity onPress={handleSave}><Text style={s.saveTxt}>Готово</Text></TouchableOpacity></View>
       <ScrollView style={s.modalBody} contentContainerStyle={{ paddingBottom: 20 }}>
         <Text style={s.verseRef}>{ref}</Text>
@@ -718,7 +718,7 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
       }} contentContainerStyle={s.list} ListEmptyComponent={<View style={s.empty}><Ionicons name="journal-outline" size={64} color={C.border} /><Text style={s.emptyTxt}>Записей пока нет</Text></View>} />
 
       <Modal visible={viewing !== null} animationType="slide" statusBarTranslucent>
-        <SafeAreaView style={[s.modal, { backgroundColor: theme.bg, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }]}>
+        <SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]}>
           <View style={[s.modalHdr, { borderBottomColor: theme.border }]}><TouchableOpacity onPress={() => setViewing(null)}><Ionicons name="close" size={24} color={theme.text} /></TouchableOpacity><Text style={[s.modalTitle, { color: theme.text }]} numberOfLines={1}>{viewing?.title}</Text><TouchableOpacity onPress={() => viewing && openEdit(viewing)}><Ionicons name="create-outline" size={24} color={theme.primary} /></TouchableOpacity></View>
           <ScrollView style={s.viewContent} contentContainerStyle={{ paddingBottom: 40 }}>{viewing && <><View style={s.viewMeta}><View style={[s.badge, { backgroundColor: catStyle(viewing.category).bg }]}><Ionicons name={catIcon(viewing.category)} size={14} color={catStyle(viewing.category).color} /><Text style={[s.badgeTxt, { color: catStyle(viewing.category).color }]}>{viewing.category}</Text></View><Text style={s.viewDate}>{new Date(viewing.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text></View>{parseBlocks(viewing.content).map(b => <View key={b.id}>{b.type === 'text' ? renderText(b) : renderVerse(b)}</View>)}</>}</ScrollView>
           <TouchableOpacity style={s.delBtn} onPress={() => viewing && del(viewing.id)}><Ionicons name="trash-outline" size={20} color={C.error} /><Text style={s.delTxt}>Удалить</Text></TouchableOpacity>
@@ -726,7 +726,7 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
       </Modal>
 
       <Modal visible={modal} animationType="slide" statusBarTranslucent>
-        <SafeAreaView style={[s.modal, { backgroundColor: theme.bg, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }]}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
           <View style={[s.modalHdr, { borderBottomColor: theme.border }]}><TouchableOpacity onPress={reset}><Ionicons name="close" size={24} color={theme.text} /></TouchableOpacity><Text style={[s.modalTitle, { color: theme.text }]}>{editing ? 'Редактировать' : 'Новая запись'}</Text><TouchableOpacity onPress={save}><Text style={[s.saveTxt, { color: theme.primary }]}>Сохранить</Text></TouchableOpacity></View>
           <ScrollView ref={scrollRef} style={s.modalBody} contentContainerStyle={{ paddingBottom: 20 }} keyboardShouldPersistTaps="handled" scrollEventThrottle={16}>
             <Text style={s.label}>Категория</Text>
@@ -836,7 +836,7 @@ const VersePickerModal = ({ visible, onClose, onSelect }: { visible: boolean; on
   const results = q.length > 2 ? BIBLE_VERSES.filter(v => v.text.toLowerCase().includes(q.toLowerCase()) || v.book.toLowerCase().includes(q.toLowerCase())).slice(0, 50) : [];
 
   return (
-    <Modal visible={visible} animationType="slide" statusBarTranslucent><SafeAreaView style={[s.modal, { paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }]}>
+    <Modal visible={visible} animationType="slide" statusBarTranslucent><SafeAreaView style={s.modal}>
       <View style={s.modalHdr}><TouchableOpacity onPress={close}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity><Text style={s.modalTitle}>Выбрать стихи {sel.size > 0 && `(${sel.size})`}</Text>{sel.size > 0 ? <TouchableOpacity onPress={confirm}><Text style={s.saveTxt}>Добавить</Text></TouchableOpacity> : <View style={{ width: 60 }} />}</View>
       {sel.size > 0 && <View style={s.colorRow}><Text style={s.colorLbl}>Цвет:</Text>{VERSE_COLORS.map(c => <TouchableOpacity key={c.id} style={[s.colorItem, { backgroundColor: c.bg, borderColor: c.border }, col === c.id && s.colorItemAct]} onPress={() => setCol(c.id)} />)}</View>}
       <View style={s.searchBox}><Ionicons name="search" size={20} color={C.textMuted} /><TextInput style={s.searchIn} value={q} onChangeText={setQ} placeholder="Поиск..." placeholderTextColor={C.textMuted} />{q.length > 0 && <TouchableOpacity onPress={() => setQ('')}><Ionicons name="close-circle" size={20} color={C.textMuted} /></TouchableOpacity>}</View>
@@ -1260,7 +1260,7 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
       </Modal>
 
       <Modal visible={editNote} animationType="slide" statusBarTranslucent>
-        <SafeAreaView style={[s.modal, { backgroundColor: theme.bg, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }]}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+        <SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
           <View style={[s.modalHdr, { borderBottomColor: theme.border }]}>
             <TouchableOpacity onPress={() => setEditNote(false)}><Ionicons name="close" size={24} color={theme.text} /></TouchableOpacity>
             <Text style={[s.modalTitle, { color: theme.text }]}>Заметка — {fmtDateRu(selDate)}</Text>
@@ -1468,7 +1468,7 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
       </Modal>
       {viewingEntry && (
         <Modal visible animationType="slide" statusBarTranslucent>
-          <SafeAreaView style={[s.modal, { backgroundColor: theme.bg, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }]}>
+          <SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]}>
             <View style={[s.modalHdr, { borderBottomColor: theme.border }]}>
               <TouchableOpacity onPress={() => setViewingEntry(null)}><Ionicons name="arrow-back" size={24} color={theme.text} /></TouchableOpacity>
               <Text style={[s.modalTitle, { color: theme.text }]} numberOfLines={1}>{viewingEntry.title}</Text>
@@ -1746,7 +1746,7 @@ const GraphView = ({ entries, folders, onClose }: { entries: Entry[]; folders: F
   };
 
   return (
-    <Modal visible animationType="slide" statusBarTranslucent><SafeAreaView style={[s.modal, { paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }]}>
+    <Modal visible animationType="slide" statusBarTranslucent><SafeAreaView style={s.modal}>
       <View style={s.modalHdr}>
         <TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity>
         <Text style={s.modalTitle}>Граф связей</Text>
@@ -1817,7 +1817,7 @@ const GraphView = ({ entries, folders, onClose }: { entries: Entry[]; folders: F
       </ScrollView>
       {viewEntry && (
         <Modal visible animationType="slide" statusBarTranslucent>
-          <SafeAreaView style={[s.modal, { backgroundColor: theme.bg, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }]}>
+          <SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]}>
             <View style={[s.modalHdr, { borderBottomColor: theme.border }]}>
               <TouchableOpacity onPress={() => setViewEntry(null)}><Ionicons name="arrow-back" size={24} color={theme.text} /></TouchableOpacity>
               <Text style={[s.modalTitle, { color: theme.text }]} numberOfLines={1}>{viewEntry.title}</Text>
