@@ -8,6 +8,7 @@ import Svg, { Circle, Line, Text as SvgText, G } from 'react-native-svg';
 import { File as ExpoFile, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
+import * as Notifications from 'expo-notifications';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -114,6 +115,41 @@ const initDb = async () => {
     try { await db.execAsync('ALTER TABLE entries ADD COLUMN folder_id INTEGER DEFAULT NULL'); } catch (e) {}
   })();
   return dbInitPromise;
+};
+
+// Notification configuration
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
+
+const scheduleReadingReminder = async (hour: number, minute: number) => {
+  await Notifications.cancelAllScheduledNotificationsAsync();
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: 'Время чтения',
+      body: 'Откройте Духовный дневник для ежедневного чтения',
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.DAILY,
+      hour,
+      minute,
+    },
+  });
+};
+
+const cancelReadingReminder = async () => {
+  await Notifications.cancelAllScheduledNotificationsAsync();
+};
+
+const requestNotificationPermission = async (): Promise<boolean> => {
+  const { status: existing } = await Notifications.getPermissionsAsync();
+  if (existing === 'granted') return true;
+  const { status } = await Notifications.requestPermissionsAsync();
+  return status === 'granted';
 };
 
 const getDailyVerse = (date: Date): BibleVerse => {
@@ -1901,6 +1937,10 @@ const SettingsScreen = () => {
   const [showGraph, setShowGraph] = useState(false);
   const [allEntries, setAllEntries] = useState<Entry[]>([]);
   const [allFolders, setAllFolders] = useState<Folder[]>([]);
+  const [reminderEnabled, setReminderEnabled] = useState(false);
+  const [reminderHour, setReminderHour] = useState(9);
+  const [reminderMinute, setReminderMinute] = useState(0);
+  const [showTimePicker, setShowTimePicker] = useState(false);
 
   useEffect(() => { (async () => {
     const e = await db.getFirstAsync<{ c: number }>('SELECT COUNT(*) as c FROM entries');
@@ -1946,6 +1986,14 @@ const SettingsScreen = () => {
     // Load for graph
     setAllEntries(await db.getAllAsync<Entry>('SELECT * FROM entries ORDER BY created_at DESC'));
     setAllFolders(await db.getAllAsync<Folder>('SELECT * FROM folders ORDER BY sort_order ASC'));
+
+    // Load reminder settings
+    const remOn = await db.getFirstAsync<{ value: string }>("SELECT value FROM app_settings WHERE key='reminderEnabled'");
+    if (remOn && remOn.value === '1') setReminderEnabled(true);
+    const remH = await db.getFirstAsync<{ value: string }>("SELECT value FROM app_settings WHERE key='reminderHour'");
+    if (remH) setReminderHour(parseInt(remH.value));
+    const remM = await db.getFirstAsync<{ value: string }>("SELECT value FROM app_settings WHERE key='reminderMinute'");
+    if (remM) setReminderMinute(parseInt(remM.value));
   })(); }, []);
 
   const totalEntries = Math.max(stats.e, 1);
@@ -1956,7 +2004,7 @@ const SettingsScreen = () => {
   const exportData = async () => {
     try {
       const data = {
-        version: '3.5',
+        version: '3.6',
         exportDate: new Date().toISOString(),
         entries: await db.getAllAsync('SELECT * FROM entries'),
         bookmarks: await db.getAllAsync('SELECT * FROM bookmarks'),
@@ -2031,6 +2079,31 @@ const SettingsScreen = () => {
       ]);
     } catch (e) { Alert.alert('Ошибка', 'Не удалось прочитать файл'); }
   };
+
+  const toggleReminder = async (enabled: boolean) => {
+    if (enabled) {
+      const granted = await requestNotificationPermission();
+      if (!granted) { Alert.alert('Разрешение', 'Разрешите уведомления в настройках устройства'); return; }
+      await scheduleReadingReminder(reminderHour, reminderMinute);
+    } else {
+      await cancelReadingReminder();
+    }
+    setReminderEnabled(enabled);
+    await db.runAsync("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('reminderEnabled', ?)", [enabled ? '1' : '0']);
+  };
+
+  const updateReminderTime = async (h: number, m: number) => {
+    setReminderHour(h);
+    setReminderMinute(m);
+    await db.runAsync("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('reminderHour', ?)", [String(h)]);
+    await db.runAsync("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('reminderMinute', ?)", [String(m)]);
+    if (reminderEnabled) {
+      await scheduleReadingReminder(h, m);
+    }
+    setShowTimePicker(false);
+  };
+
+  const fmtTime = (h: number, m: number) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 
   return (
     <View style={[s.screen, { backgroundColor: theme.bg }]}><View style={s.header}><Text style={[s.headerTxt, { color: theme.text }]}>⚙️ Настройки</Text></View>
@@ -2128,6 +2201,32 @@ const SettingsScreen = () => {
           </TouchableOpacity>
         </View>
 
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>НАПОМИНАНИЯ</Text>
+          <View style={{ backgroundColor: theme.surface, borderRadius: 12, padding: 16, gap: 12 }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                <Ionicons name="notifications" size={22} color={theme.warning} />
+                <View><Text style={{ fontSize: 15, fontWeight: '500', color: theme.text }}>Напоминание о чтении</Text><Text style={{ fontSize: 12, color: theme.textMuted }}>Ежедневное уведомление</Text></View>
+              </View>
+              <TouchableOpacity style={{ width: 52, height: 30, borderRadius: 15, backgroundColor: reminderEnabled ? theme.success : theme.borderLight, justifyContent: 'center', paddingHorizontal: 2 }} onPress={() => toggleReminder(!reminderEnabled)}>
+                <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: theme.textOn, alignSelf: reminderEnabled ? 'flex-end' : 'flex-start', elevation: 2 }} />
+              </TouchableOpacity>
+            </View>
+            {reminderEnabled && (
+              <TouchableOpacity style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTopWidth: 1, borderTopColor: theme.borderLight }} onPress={() => setShowTimePicker(true)}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Ionicons name="time" size={20} color={theme.primary} />
+                  <Text style={{ fontSize: 14, color: theme.textSec }}>Время</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={{ fontSize: 16, fontWeight: '600', color: theme.primary }}>{fmtTime(reminderHour, reminderMinute)}</Text>
+                  <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
+                </View>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
         <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>ДАННЫЕ</Text>
           <TouchableOpacity style={[s.sheetItem, { borderRadius: 12, backgroundColor: theme.surface, marginBottom: 8 }]} onPress={exportData}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
@@ -2145,9 +2244,34 @@ const SettingsScreen = () => {
           </TouchableOpacity>
         </View>
 
-        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 3.5</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 3.6</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
       </ScrollView>
       {showGraph && <GraphView entries={allEntries} folders={allFolders} onClose={() => setShowGraph(false)} />}
+      {showTimePicker && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setShowTimePicker(false)}>
+          <TouchableOpacity style={s.overlay} activeOpacity={1} onPress={() => setShowTimePicker(false)}>
+            <View style={[s.picker, { backgroundColor: theme.surface }]}>
+              <Text style={[s.pickerTitle, { color: theme.text }]}>Время напоминания</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, marginBottom: 20 }}>
+                <View style={{ alignItems: 'center' }}>
+                  <TouchableOpacity onPress={() => { const h = (reminderHour + 1) % 24; setReminderHour(h); }} style={{ padding: 8 }}><Ionicons name="chevron-up" size={24} color={theme.primary} /></TouchableOpacity>
+                  <Text style={{ fontSize: 36, fontWeight: '700', color: theme.text, width: 60, textAlign: 'center' }}>{String(reminderHour).padStart(2, '0')}</Text>
+                  <TouchableOpacity onPress={() => { const h = (reminderHour - 1 + 24) % 24; setReminderHour(h); }} style={{ padding: 8 }}><Ionicons name="chevron-down" size={24} color={theme.primary} /></TouchableOpacity>
+                </View>
+                <Text style={{ fontSize: 36, fontWeight: '700', color: theme.text }}>:</Text>
+                <View style={{ alignItems: 'center' }}>
+                  <TouchableOpacity onPress={() => { const m = (reminderMinute + 5) % 60; setReminderMinute(m); }} style={{ padding: 8 }}><Ionicons name="chevron-up" size={24} color={theme.primary} /></TouchableOpacity>
+                  <Text style={{ fontSize: 36, fontWeight: '700', color: theme.text, width: 60, textAlign: 'center' }}>{String(reminderMinute).padStart(2, '0')}</Text>
+                  <TouchableOpacity onPress={() => { const m = (reminderMinute - 5 + 60) % 60; setReminderMinute(m); }} style={{ padding: 8 }}><Ionicons name="chevron-down" size={24} color={theme.primary} /></TouchableOpacity>
+                </View>
+              </View>
+              <TouchableOpacity style={[s.saveBtn, { backgroundColor: theme.primary }]} onPress={() => updateReminderTime(reminderHour, reminderMinute)}>
+                <Text style={[s.saveBtnTxt, { color: theme.textOn }]}>Сохранить</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+      )}
     </View>
   );
 };

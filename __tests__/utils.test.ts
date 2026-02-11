@@ -352,3 +352,77 @@ describe('scaledSz', () => {
     expect(scaledSz(15, 1.1)).toBe(17);
   });
 });
+
+// ── fmtTime ──
+
+describe('fmtTime', () => {
+  const { fmtTime } = require('../utils');
+
+  it('formats single-digit hour and minute with padding', () => {
+    expect(fmtTime(9, 0)).toBe('09:00');
+  });
+
+  it('formats double-digit hour and minute', () => {
+    expect(fmtTime(14, 30)).toBe('14:30');
+  });
+
+  it('formats midnight', () => {
+    expect(fmtTime(0, 0)).toBe('00:00');
+  });
+
+  it('formats end of day', () => {
+    expect(fmtTime(23, 59)).toBe('23:59');
+  });
+
+  it('formats minute with padding', () => {
+    expect(fmtTime(12, 5)).toBe('12:05');
+  });
+});
+
+// ── wrapHour ──
+
+describe('wrapHour', () => {
+  const { wrapHour } = require('../utils');
+
+  it('wraps 24 to 0', () => {
+    expect(wrapHour(24)).toBe(0);
+  });
+
+  it('wraps 25 to 1', () => {
+    expect(wrapHour(25)).toBe(1);
+  });
+
+  it('wraps -1 to 23', () => {
+    expect(wrapHour(-1)).toBe(23);
+  });
+
+  it('keeps valid hour unchanged', () => {
+    expect(wrapHour(9)).toBe(9);
+    expect(wrapHour(0)).toBe(0);
+    expect(wrapHour(23)).toBe(23);
+  });
+});
+
+// ── wrapMinute ──
+
+describe('wrapMinute', () => {
+  const { wrapMinute } = require('../utils');
+
+  it('wraps 60 to 0', () => {
+    expect(wrapMinute(60)).toBe(0);
+  });
+
+  it('wraps -5 to 55', () => {
+    expect(wrapMinute(-5)).toBe(55);
+  });
+
+  it('keeps valid minute unchanged', () => {
+    expect(wrapMinute(0)).toBe(0);
+    expect(wrapMinute(30)).toBe(30);
+    expect(wrapMinute(59)).toBe(59);
+  });
+
+  it('wraps 65 to 5', () => {
+    expect(wrapMinute(65)).toBe(5);
+  });
+});
