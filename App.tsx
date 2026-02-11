@@ -1580,7 +1580,6 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
                 return <Text key={b.id} style={st}>{b.content}</Text>;
               })}
             </ScrollView>
-            </View>
           </SafeAreaView></SafeAreaProvider>
         </Modal>
       )}
