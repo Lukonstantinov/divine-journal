@@ -806,9 +806,14 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
       <Modal visible={viewing !== null} animationType="slide" statusBarTranslucent>
         <SafeAreaProvider><SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]}>
           <View style={[s.modalHdr, { borderBottomColor: theme.border }]}><TouchableOpacity onPress={() => setViewing(null)}><Ionicons name="close" size={24} color={theme.text} /></TouchableOpacity><Text style={[s.modalTitle, { color: theme.text }]} numberOfLines={1}>{viewing?.title}</Text><TouchableOpacity onPress={() => viewing && openEdit(viewing)}><Ionicons name="create-outline" size={24} color={theme.primary} /></TouchableOpacity></View>
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingBottom: 60 }}>{viewing && <><View style={s.viewMeta}><View style={[s.badge, { backgroundColor: catStyle(viewing.category).bg }]}><Ionicons name={catIcon(viewing.category)} size={14} color={catStyle(viewing.category).color} /><Text style={[s.badgeTxt, { color: catStyle(viewing.category).color }]}>{viewing.category}</Text></View><Text style={s.viewDate}>{new Date(viewing.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text></View>{parseBlocks(viewing.content).map(b => <View key={b.id}>{b.type === 'divider' ? <View style={{ height: 1, backgroundColor: theme.border, marginVertical: 12 }} /> : b.type === 'text' ? renderText(b) : renderVerse(b)}</View>)}
-              <TouchableOpacity style={[s.delBtn, { marginTop: 20 }]} onPress={() => viewing && del(viewing.id)}><Ionicons name="trash-outline" size={20} color={C.error} /><Text style={s.delTxt}>Удалить</Text></TouchableOpacity>
-            </>}</ScrollView>
+          {viewing && <FlatList
+            data={parseBlocks(viewing.content)}
+            keyExtractor={b => b.id}
+            renderItem={({ item: b }) => <View>{b.type === 'divider' ? <View style={{ height: 1, backgroundColor: theme.border, marginVertical: 12 }} /> : b.type === 'text' ? renderText(b) : renderVerse(b)}</View>}
+            ListHeaderComponent={<View style={s.viewMeta}><View style={[s.badge, { backgroundColor: catStyle(viewing.category).bg }]}><Ionicons name={catIcon(viewing.category)} size={14} color={catStyle(viewing.category).color} /><Text style={[s.badgeTxt, { color: catStyle(viewing.category).color }]}>{viewing.category}</Text></View><Text style={s.viewDate}>{new Date(viewing.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text></View>}
+            ListFooterComponent={<TouchableOpacity style={[s.delBtn, { marginTop: 20 }]} onPress={() => viewing && del(viewing.id)}><Ionicons name="trash-outline" size={20} color={C.error} /><Text style={s.delTxt}>Удалить</Text></TouchableOpacity>}
+            contentContainerStyle={{ padding: 20, paddingBottom: 60 }}
+          />}
         </SafeAreaView></SafeAreaProvider>
       </Modal>
 
@@ -1562,24 +1567,21 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
               <Text style={[s.modalTitle, { color: theme.text }]} numberOfLines={1}>{viewingEntry.title}</Text>
               <View style={{ width: 24 }} />
             </View>
-            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingBottom: 60 }}>
-              <View style={s.viewMeta}>
-                <View style={[s.badge, { backgroundColor: catStyle(viewingEntry.category).bg }]}>
-                  <Ionicons name={catIcon(viewingEntry.category) as any} size={14} color={catStyle(viewingEntry.category).color} />
-                  <Text style={[s.badgeTxt, { color: catStyle(viewingEntry.category).color }]}>{viewingEntry.category}</Text>
-                </View>
-                <Text style={[s.viewDate, { color: theme.textMuted }]}>{new Date(viewingEntry.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text>
-              </View>
-              {parseBlocks(viewingEntry.content).map(b => {
-                if (b.type === 'divider') return <View key={b.id} style={{ height: 1, backgroundColor: theme.border, marginVertical: 12 }} />;
-                if (b.type === 'verse') { try { const d = JSON.parse(b.content) as VerseData; const vc = getVColor(b.boxColor); const ref = d.verseEnd ? `${d.book} ${d.chapter}:${d.verse}-${d.verseEnd}` : `${d.book} ${d.chapter}:${d.verse}`; return <View key={b.id} style={[s.verseView, { backgroundColor: vc.bg, borderLeftColor: vc.border }]}><View style={s.verseHdr}><Ionicons name="book" size={16} color={vc.border} /><Text style={[s.verseRef, { color: vc.border }]}>{ref}</Text></View><Text style={[s.verseTxt, { color: theme.text }]}>{d.text}</Text></View>; } catch { return null; } }
+            <FlatList
+              data={parseBlocks(viewingEntry.content)}
+              keyExtractor={b => b.id}
+              renderItem={({ item: b }) => {
+                if (b.type === 'divider') return <View style={{ height: 1, backgroundColor: theme.border, marginVertical: 12 }} />;
+                if (b.type === 'verse') { try { const d = JSON.parse(b.content) as VerseData; const vc = getVColor(b.boxColor); const ref = d.verseEnd ? `${d.book} ${d.chapter}:${d.verse}-${d.verseEnd}` : `${d.book} ${d.chapter}:${d.verse}`; return <View style={[s.verseView, { backgroundColor: vc.bg, borderLeftColor: vc.border }]}><View style={s.verseHdr}><Ionicons name="book" size={16} color={vc.border} /><Text style={[s.verseRef, { color: vc.border }]}>{ref}</Text></View><Text style={[s.verseTxt, { color: theme.text }]}>{d.text}</Text></View>; } catch { return null; } }
                 if (!b.content) return null;
                 const st: any = { fontSize: 16, color: theme.text, lineHeight: 26, marginBottom: 8 };
                 if (b.textStyle?.bold) st.fontWeight = 'bold'; if (b.textStyle?.italic) st.fontStyle = 'italic'; if (b.textStyle?.underline) st.textDecorationLine = 'underline';
                 if (b.textStyle?.highlight) { const hl = TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight); if (hl) st.backgroundColor = hl.bg; }
-                return <Text key={b.id} style={st}>{b.content}</Text>;
-              })}
-            </ScrollView>
+                return <Text style={st}>{b.content}</Text>;
+              }}
+              ListHeaderComponent={<View style={s.viewMeta}><View style={[s.badge, { backgroundColor: catStyle(viewingEntry.category).bg }]}><Ionicons name={catIcon(viewingEntry.category) as any} size={14} color={catStyle(viewingEntry.category).color} /><Text style={[s.badgeTxt, { color: catStyle(viewingEntry.category).color }]}>{viewingEntry.category}</Text></View><Text style={[s.viewDate, { color: theme.textMuted }]}>{new Date(viewingEntry.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text></View>}
+              contentContainerStyle={{ padding: 20, paddingBottom: 60 }}
+            />
           </SafeAreaView></SafeAreaProvider>
         </Modal>
       )}
@@ -1911,16 +1913,13 @@ const GraphView = ({ entries, folders, onClose }: { entries: Entry[]; folders: F
               <Text style={[s.modalTitle, { color: theme.text }]} numberOfLines={1}>{viewEntry.title}</Text>
               <View style={{ width: 24 }} />
             </View>
-            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingBottom: 60 }}>
-              <View style={s.viewMeta}>
-                <View style={[s.badge, { backgroundColor: catStyle(viewEntry.category).bg }]}>
-                  <Ionicons name={catIcon(viewEntry.category) as any} size={14} color={catStyle(viewEntry.category).color} />
-                  <Text style={[s.badgeTxt, { color: catStyle(viewEntry.category).color }]}>{viewEntry.category}</Text>
-                </View>
-                <Text style={[s.viewDate, { color: theme.textMuted }]}>{new Date(viewEntry.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text>
-              </View>
-              {parseBlocks(viewEntry.content).map(b => <View key={b.id}>{renderEntryBlock(b)}</View>)}
-            </ScrollView>
+            <FlatList
+              data={parseBlocks(viewEntry.content)}
+              keyExtractor={b => b.id}
+              renderItem={({ item: b }) => <View>{renderEntryBlock(b)}</View>}
+              ListHeaderComponent={<View style={s.viewMeta}><View style={[s.badge, { backgroundColor: catStyle(viewEntry.category).bg }]}><Ionicons name={catIcon(viewEntry.category) as any} size={14} color={catStyle(viewEntry.category).color} /><Text style={[s.badgeTxt, { color: catStyle(viewEntry.category).color }]}>{viewEntry.category}</Text></View><Text style={[s.viewDate, { color: theme.textMuted }]}>{new Date(viewEntry.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text></View>}
+              contentContainerStyle={{ padding: 20, paddingBottom: 60 }}
+            />
           </SafeAreaView></SafeAreaProvider>
         </Modal>
       )}
@@ -2004,7 +2003,7 @@ const SettingsScreen = () => {
   const exportData = async () => {
     try {
       const data = {
-        version: '3.8',
+        version: '3.9',
         exportDate: new Date().toISOString(),
         entries: await db.getAllAsync('SELECT * FROM entries'),
         bookmarks: await db.getAllAsync('SELECT * FROM bookmarks'),
@@ -2244,7 +2243,7 @@ const SettingsScreen = () => {
           </TouchableOpacity>
         </View>
 
-        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 3.8</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 3.9</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
       </ScrollView>
       {showGraph && <GraphView entries={allEntries} folders={allFolders} onClose={() => setShowGraph(false)} />}
       {showTimePicker && (
