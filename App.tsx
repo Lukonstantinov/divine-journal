@@ -806,9 +806,11 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
       <Modal visible={viewing !== null} animationType="slide" statusBarTranslucent>
         <SafeAreaProvider><SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]}>
           <View style={[s.modalHdr, { borderBottomColor: theme.border }]}><TouchableOpacity onPress={() => setViewing(null)}><Ionicons name="close" size={24} color={theme.text} /></TouchableOpacity><Text style={[s.modalTitle, { color: theme.text }]} numberOfLines={1}>{viewing?.title}</Text><TouchableOpacity onPress={() => viewing && openEdit(viewing)}><Ionicons name="create-outline" size={24} color={theme.primary} /></TouchableOpacity></View>
-          <ScrollView style={s.viewContent} contentContainerStyle={{ paddingBottom: 20 }}>{viewing && <><View style={s.viewMeta}><View style={[s.badge, { backgroundColor: catStyle(viewing.category).bg }]}><Ionicons name={catIcon(viewing.category)} size={14} color={catStyle(viewing.category).color} /><Text style={[s.badgeTxt, { color: catStyle(viewing.category).color }]}>{viewing.category}</Text></View><Text style={s.viewDate}>{new Date(viewing.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text></View>{parseBlocks(viewing.content).map(b => <View key={b.id}>{b.type === 'text' ? renderText(b) : renderVerse(b)}</View>)}
-            <TouchableOpacity style={[s.delBtn, { marginTop: 20 }]} onPress={() => viewing && del(viewing.id)}><Ionicons name="trash-outline" size={20} color={C.error} /><Text style={s.delTxt}>Удалить</Text></TouchableOpacity>
-          </>}</ScrollView>
+          <View style={{ flex: 1 }}>
+            <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 60 }} nestedScrollEnabled showsVerticalScrollIndicator>{viewing && <><View style={s.viewMeta}><View style={[s.badge, { backgroundColor: catStyle(viewing.category).bg }]}><Ionicons name={catIcon(viewing.category)} size={14} color={catStyle(viewing.category).color} /><Text style={[s.badgeTxt, { color: catStyle(viewing.category).color }]}>{viewing.category}</Text></View><Text style={s.viewDate}>{new Date(viewing.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text></View>{parseBlocks(viewing.content).map(b => <View key={b.id}>{b.type === 'divider' ? <View style={{ height: 1, backgroundColor: theme.border, marginVertical: 12 }} /> : b.type === 'text' ? renderText(b) : renderVerse(b)}</View>)}
+              <TouchableOpacity style={[s.delBtn, { marginTop: 20 }]} onPress={() => viewing && del(viewing.id)}><Ionicons name="trash-outline" size={20} color={C.error} /><Text style={s.delTxt}>Удалить</Text></TouchableOpacity>
+            </>}</ScrollView>
+          </View>
         </SafeAreaView></SafeAreaProvider>
       </Modal>
 
@@ -1562,7 +1564,8 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
               <Text style={[s.modalTitle, { color: theme.text }]} numberOfLines={1}>{viewingEntry.title}</Text>
               <View style={{ width: 24 }} />
             </View>
-            <ScrollView style={s.viewContent} contentContainerStyle={{ paddingBottom: 20 }}>
+            <View style={{ flex: 1 }}>
+            <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 60 }} nestedScrollEnabled showsVerticalScrollIndicator>
               <View style={s.viewMeta}>
                 <View style={[s.badge, { backgroundColor: catStyle(viewingEntry.category).bg }]}>
                   <Ionicons name={catIcon(viewingEntry.category) as any} size={14} color={catStyle(viewingEntry.category).color} />
@@ -1580,6 +1583,7 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
                 return <Text key={b.id} style={st}>{b.content}</Text>;
               })}
             </ScrollView>
+            </View>
           </SafeAreaView></SafeAreaProvider>
         </Modal>
       )}
@@ -1911,7 +1915,8 @@ const GraphView = ({ entries, folders, onClose }: { entries: Entry[]; folders: F
               <Text style={[s.modalTitle, { color: theme.text }]} numberOfLines={1}>{viewEntry.title}</Text>
               <View style={{ width: 24 }} />
             </View>
-            <ScrollView style={s.viewContent} contentContainerStyle={{ paddingBottom: 20 }}>
+            <View style={{ flex: 1 }}>
+            <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 60 }} nestedScrollEnabled showsVerticalScrollIndicator>
               <View style={s.viewMeta}>
                 <View style={[s.badge, { backgroundColor: catStyle(viewEntry.category).bg }]}>
                   <Ionicons name={catIcon(viewEntry.category) as any} size={14} color={catStyle(viewEntry.category).color} />
@@ -1921,6 +1926,7 @@ const GraphView = ({ entries, folders, onClose }: { entries: Entry[]; folders: F
               </View>
               {parseBlocks(viewEntry.content).map(b => <View key={b.id}>{renderEntryBlock(b)}</View>)}
             </ScrollView>
+            </View>
           </SafeAreaView></SafeAreaProvider>
         </Modal>
       )}
