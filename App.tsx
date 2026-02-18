@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Modal, ScrollView, Alert, StatusBar, KeyboardAvoidingView, Platform, Dimensions, AppState, Keyboard } from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, TextInput, Modal, ScrollView, Alert, StatusBar, KeyboardAvoidingView, Platform, Dimensions, AppState, Keyboard, Share } from 'react-native';
 import * as SQLite from 'expo-sqlite';
 import { Ionicons } from '@expo/vector-icons';
 import { BIBLE_VERSES, BIBLE_BOOKS, BibleVerse, BibleBook } from './BibleVerses';
@@ -9,6 +9,7 @@ import { File as ExpoFile, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Notifications from 'expo-notifications';
+import { getFullDailyReading, type DailyReadingResult, type CustomPattern } from './DailyReading';
 
 const { width: SW } = Dimensions.get('window');
 
@@ -88,6 +89,25 @@ interface Fasting { id: number; start_date: string; end_date: string | null; not
 interface Folder { id: number; name: string; color: string; icon: string; sort_order: number; }
 interface NavTarget { book: string; chapter: number; }
 
+interface ReadStats {
+  totalReads: number;
+  currentStreak: number;
+  savedFromReading: number;
+  hasCustomPattern: boolean;
+  uniquePsalmsRead: number;
+}
+
+const ACHIEVEMENTS = [
+  { id: 'first_read',     emoji: '📖', title: 'Первое чтение',    desc: 'Прочитай ежедневное чтение впервые',        condition: (s: ReadStats) => s.totalReads >= 1 },
+  { id: 'streak_3',       emoji: '🔥', title: '3 дня подряд',     desc: '3 дня непрерывного чтения',                 condition: (s: ReadStats) => s.currentStreak >= 3 },
+  { id: 'streak_7',       emoji: '✨', title: 'Неделя с Богом',   desc: '7 дней непрерывного чтения',                condition: (s: ReadStats) => s.currentStreak >= 7 },
+  { id: 'streak_30',      emoji: '👑', title: 'Месяц верности',   desc: '30 дней непрерывного чтения',               condition: (s: ReadStats) => s.currentStreak >= 30 },
+  { id: 'saved_5',        emoji: '💾', title: 'Хранитель слова',  desc: 'Сохрани 5 стихов в журнал из чтения',       condition: (s: ReadStats) => s.savedFromReading >= 5 },
+  { id: 'saved_10',       emoji: '📚', title: 'Библиотекарь',     desc: 'Сохрани 10 стихов в журнал из чтения',      condition: (s: ReadStats) => s.savedFromReading >= 10 },
+  { id: 'custom_pattern', emoji: '🎯', title: 'Искатель',          desc: 'Настрой собственный паттерн стихов',        condition: (s: ReadStats) => s.hasCustomPattern },
+  { id: 'psalm_fan',      emoji: '🎵', title: 'Псалмопевец',      desc: 'Прочитай 10 различных псалмов',             condition: (s: ReadStats) => s.uniquePsalmsRead >= 10 },
+] as const;
+
 let db: SQLite.SQLiteDatabase;
 let dbInitPromise: Promise<void> | null = null;
 
@@ -111,6 +131,8 @@ const initDb = async () => {
       CREATE TABLE IF NOT EXISTS folders (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, color TEXT DEFAULT '#8B4513', icon TEXT DEFAULT 'folder', sort_order INTEGER DEFAULT 0, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
       CREATE TABLE IF NOT EXISTS daily_verse_history (id INTEGER PRIMARY KEY AUTOINCREMENT, date TEXT NOT NULL UNIQUE, verse_id TEXT NOT NULL, seen BOOLEAN DEFAULT 0);
       CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY, value TEXT);
+      CREATE TABLE IF NOT EXISTS daily_reading_history (date TEXT PRIMARY KEY, read_at TEXT NOT NULL, verse_of_day_ref TEXT, psalms_read TEXT, proverbs_read TEXT);
+      CREATE TABLE IF NOT EXISTS achievements (id TEXT PRIMARY KEY, unlocked_at TEXT NOT NULL, title TEXT NOT NULL, description TEXT NOT NULL);
     `);
     try { await db.execAsync('ALTER TABLE entries ADD COLUMN folder_id INTEGER DEFAULT NULL'); } catch (e) {}
   })();
@@ -151,6 +173,83 @@ const requestNotificationPermission = async (): Promise<boolean> => {
   const { status } = await Notifications.requestPermissionsAsync();
   return status === 'granted';
 };
+
+async function getDailyReadingStatus(todayStr: string): Promise<{ isRead: boolean; streak: number }> {
+  try {
+    const row = await db.getFirstAsync<{ date: string }>(
+      'SELECT date FROM daily_reading_history WHERE date=?', [todayStr]
+    );
+    const isRead = !!row;
+    const rows = await db.getAllAsync<{ date: string }>(
+      'SELECT date FROM daily_reading_history ORDER BY date DESC LIMIT 31'
+    );
+    let streak = 0;
+    let expected = isRead ? todayStr : (() => {
+      const d = new Date(todayStr + 'T00:00:00'); d.setDate(d.getDate() - 1);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    })();
+    for (const r of rows) {
+      if (r.date === expected) {
+        streak++;
+        const d = new Date(expected + 'T00:00:00'); d.setDate(d.getDate() - 1);
+        expected = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      } else if (r.date < expected) break;
+    }
+    return { isRead, streak };
+  } catch { return { isRead: false, streak: 0 }; }
+}
+
+async function markDailyRead(todayStr: string, verseRef: string, psalmsChapters: number[], proverbsRefs: string[]): Promise<void> {
+  try {
+    await db.runAsync(
+      'INSERT OR REPLACE INTO daily_reading_history (date, read_at, verse_of_day_ref, psalms_read, proverbs_read) VALUES (?,?,?,?,?)',
+      [todayStr, new Date().toISOString(), verseRef, JSON.stringify(psalmsChapters), JSON.stringify(proverbsRefs)]
+    );
+  } catch (e) { console.warn('markDailyRead error:', e); }
+}
+
+async function getReadStats(todayStr: string): Promise<ReadStats> {
+  try {
+    const historyRows = await db.getAllAsync<{ date: string; psalms_read: string }>(
+      'SELECT date, psalms_read FROM daily_reading_history ORDER BY date DESC LIMIT 31'
+    );
+    const totalRow = await db.getFirstAsync<{ c: number }>('SELECT COUNT(*) as c FROM daily_reading_history');
+    const totalReads = totalRow?.c || 0;
+    const { streak: currentStreak } = await getDailyReadingStatus(todayStr);
+    const savedRow = await db.getFirstAsync<{ value: string }>(
+      "SELECT value FROM app_settings WHERE key='saved_from_reading_count'"
+    );
+    const savedFromReading = parseInt(savedRow?.value || '0');
+    const patternRow = await db.getFirstAsync<{ value: string }>(
+      "SELECT value FROM app_settings WHERE key='daily_custom_pattern'"
+    );
+    const hasCustomPattern = !!(patternRow?.value && patternRow.value !== 'null');
+    const psalmSet = new Set<number>();
+    for (const row of historyRows) {
+      try { const chs = JSON.parse(row.psalms_read || '[]'); chs.forEach((c: number) => psalmSet.add(c)); } catch {}
+    }
+    const uniquePsalmsRead = psalmSet.size;
+    return { totalReads, currentStreak, savedFromReading, hasCustomPattern, uniquePsalmsRead };
+  } catch { return { totalReads: 0, currentStreak: 0, savedFromReading: 0, hasCustomPattern: false, uniquePsalmsRead: 0 }; }
+}
+
+async function checkAndUnlockAchievements(stats: ReadStats): Promise<typeof ACHIEVEMENTS[number][]> {
+  const unlocked: typeof ACHIEVEMENTS[number][] = [];
+  try {
+    const existing = await db.getAllAsync<{ id: string }>('SELECT id FROM achievements');
+    const existingIds = new Set(existing.map(r => r.id));
+    for (const a of ACHIEVEMENTS) {
+      if (!existingIds.has(a.id) && a.condition(stats)) {
+        await db.runAsync(
+          'INSERT OR IGNORE INTO achievements (id, unlocked_at, title, description) VALUES (?,?,?,?)',
+          [a.id, new Date().toISOString(), a.title, a.desc]
+        );
+        unlocked.push(a);
+      }
+    }
+  } catch (e) { console.warn('checkAndUnlockAchievements error:', e); }
+  return unlocked;
+}
 
 const getDailyVerse = (date: Date): BibleVerse => {
   const seed = date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate();
@@ -472,6 +571,167 @@ const VerseFormatModal = ({ visible, onClose, verseData, onSave }: { visible: bo
   );
 };
 
+// Daily Reading Card
+const DailyReadingCard = ({ isRead, streak, onOpenReading }: { isRead: boolean; streak: number; onOpenReading: () => void }) => {
+  const { theme } = useTheme();
+  const dateStr = new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  return (
+    <View style={[s.readingCard, { backgroundColor: isRead ? '#E8F5E9' : '#FFF8E7', borderColor: isRead ? '#4A7C59' : theme.accent }]}>
+      {streak >= 1 && <View style={[s.readingStreakBadge, { backgroundColor: theme.accentLight }]}><Text style={{ fontSize: 12, color: theme.warning }}>🔥 {streak} дн.</Text></View>}
+      <Text style={[s.readingCardTitle, { color: theme.text }]}>📖 Ежедневное чтение</Text>
+      <Text style={[s.readingCardDate, { color: theme.textMuted }]}>{dateStr}</Text>
+      {isRead ? (
+        <View style={[s.readingCardBtn, { backgroundColor: '#E8F5E9' }]}>
+          <Text style={[s.readingCardBtnTxt, { color: '#4A7C59' }]}>✓ Прочитано сегодня</Text>
+        </View>
+      ) : (
+        <TouchableOpacity style={[s.readingCardBtn, { backgroundColor: theme.accent }]} onPress={onOpenReading}>
+          <Text style={[s.readingCardBtnTxt, { color: '#FFFFFF' }]}>Читать на сегодня →</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
+};
+
+// Daily Reading Modal
+const DailyReadingModal = ({ visible, reading, isRead, onClose, onMarkRead, onSaveToJournal }: {
+  visible: boolean; reading: DailyReadingResult | null; isRead: boolean;
+  onClose: () => void; onMarkRead: () => void; onSaveToJournal: (title: string, text: string, verseRef: string) => void;
+}) => {
+  const { theme } = useTheme();
+  const [expandedPsalms, setExpandedPsalms] = useState<Set<number>>(new Set([0]));
+
+  if (!reading) return null;
+
+  const togglePsalm = (idx: number) => {
+    setExpandedPsalms(prev => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx); else next.add(idx);
+      return next;
+    });
+  };
+
+  const shareVerse = (text: string, reference: string) => {
+    Share.share({ message: `"${text}" — ${reference}` });
+  };
+
+  const day = new Date().getDate();
+
+  return (
+    <Modal visible={visible} animationType="slide" statusBarTranslucent>
+      <SafeAreaProvider><SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]}>
+        <View style={[s.modalHdr, { borderBottomColor: theme.border }]}>
+          <TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color={theme.text} /></TouchableOpacity>
+          <Text style={[s.modalTitle, { color: theme.text }]}>Ежедневное чтение</Text>
+          <View style={{ width: 24 }} />
+        </View>
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+          {/* Section 1: Verse of the Day */}
+          <View style={s.drSection}>
+            <Text style={[s.drSectionHdr, { color: theme.text }]}>✨ Стих дня</Text>
+            <View style={s.drVerseCard}>
+              <Text style={[s.drVerseRef, { color: theme.primary }]}>{reading.verseOfDay.reference}</Text>
+              <Text style={[s.drVerseTxt, { color: theme.text }]}>"{reading.verseOfDay.text}"</Text>
+              <View style={s.drVerseActions}>
+                <TouchableOpacity style={[s.drActionBtn, { backgroundColor: theme.accentLight }]} onPress={() => onSaveToJournal(reading.verseOfDay.reference, reading.verseOfDay.text, reading.verseOfDay.reference)}>
+                  <Text style={[s.drActionBtnTxt, { color: theme.primary }]}>💾 В журнал</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[s.drActionBtn, { backgroundColor: theme.accentLight }]} onPress={() => shareVerse(reading.verseOfDay.text, reading.verseOfDay.reference)}>
+                  <Text style={[s.drActionBtnTxt, { color: theme.primary }]}>📤 Поделиться</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+
+          {/* Section 2: Date Pattern Verses */}
+          <View style={s.drSection}>
+            <Text style={[s.drSectionHdr, { color: theme.text }]}>📅 Стихи {day}:{day}</Text>
+            {reading.datePatternVerses.length === 0 ? (
+              <Text style={[s.drEmptyTxt, { color: theme.textMuted }]}>Стихи с таким паттерном не найдены</Text>
+            ) : reading.datePatternVerses.map((v, i) => (
+              <View key={i} style={[s.drPatternCard, { backgroundColor: theme.surface }]}>
+                <Text style={[s.drVerseRef, { color: theme.primary, marginBottom: 6 }]}>{v.reference}</Text>
+                <Text style={{ fontSize: 14, color: theme.textSec, lineHeight: 20 }}>{v.text}</Text>
+                <View style={[s.drVerseActions, { marginTop: 8 }]}>
+                  <TouchableOpacity style={[s.drActionBtn, { backgroundColor: theme.accentLight }]} onPress={() => onSaveToJournal(v.reference, v.text, v.reference)}>
+                    <Text style={[s.drActionBtnTxt, { color: theme.primary }]}>💾 В журнал</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+          </View>
+
+          {/* Section 3: Psalms */}
+          <View style={s.drSection}>
+            <Text style={[s.drSectionHdr, { color: theme.text }]}>🎵 Псалмы на сегодня</Text>
+            {reading.psalms.length === 0 ? (
+              <Text style={[s.drEmptyTxt, { color: theme.textMuted }]}>Псалмы не найдены</Text>
+            ) : reading.psalms.map((psalm, idx) => (
+              <View key={idx} style={[s.drPsalmCard, { backgroundColor: theme.surface }]}>
+                <TouchableOpacity style={s.drPsalmHdr} onPress={() => togglePsalm(idx)}>
+                  <Ionicons name={expandedPsalms.has(idx) ? 'chevron-down' : 'chevron-forward'} size={20} color={theme.primary} />
+                  <Text style={{ flex: 1, fontSize: 15, fontWeight: '600', color: theme.text }}>{psalm.title}</Text>
+                  <Text style={{ fontSize: 12, color: theme.textMuted }}>{psalm.verses.length} ст.</Text>
+                  <TouchableOpacity style={{ marginLeft: 8 }} onPress={() => {
+                    const fullText = psalm.verses.map(v => `${v.number}. ${v.text}`).join('\n');
+                    onSaveToJournal(psalm.title, fullText, psalm.title);
+                  }}>
+                    <Text style={{ fontSize: 13, color: theme.primary }}>💾</Text>
+                  </TouchableOpacity>
+                </TouchableOpacity>
+                {expandedPsalms.has(idx) && (
+                  <View style={s.drPsalmBody}>
+                    {psalm.verses.map(v => (
+                      <View key={v.number} style={s.drPsalmVerse}>
+                        <Text style={[s.drPsalmVNum, { color: theme.primary }]}>{v.number}</Text>
+                        <Text style={[s.drPsalmVTxt, { color: theme.text, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif' }]}>{v.text}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            ))}
+          </View>
+
+          {/* Section 4: Proverbs */}
+          <View style={s.drSection}>
+            <Text style={[s.drSectionHdr, { color: theme.text }]}>💡 Притчи на сегодня</Text>
+            {reading.proverbs.length === 0 ? (
+              <Text style={[s.drEmptyTxt, { color: theme.textMuted }]}>Притчи не найдены</Text>
+            ) : reading.proverbs.map((p, i) => (
+              <View key={i} style={[s.drPatternCard, { backgroundColor: theme.surface }]}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <View style={{ backgroundColor: p.type === 'by_day' ? theme.accentLight : theme.dreamBg, paddingHorizontal: 8, paddingVertical: 2, borderRadius: 8 }}>
+                    <Text style={{ fontSize: 11, color: p.type === 'by_day' ? theme.primary : theme.success, fontWeight: '600' }}>{p.type === 'by_day' ? 'По дню' : 'Случайная'}</Text>
+                  </View>
+                  <Text style={[s.drVerseRef, { color: theme.primary }]}>{p.reference}</Text>
+                </View>
+                <Text style={{ fontSize: 14, color: theme.textSec, lineHeight: 20 }}>{p.text}</Text>
+                <View style={[s.drVerseActions, { marginTop: 8 }]}>
+                  <TouchableOpacity style={[s.drActionBtn, { backgroundColor: theme.accentLight }]} onPress={() => onSaveToJournal(p.reference, p.text, p.reference)}>
+                    <Text style={[s.drActionBtnTxt, { color: theme.primary }]}>💾 В журнал</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+          </View>
+        </ScrollView>
+
+        {/* Footer button */}
+        {isRead ? (
+          <View style={[s.drMarkBtn, { backgroundColor: theme.borderLight }]}>
+            <Text style={[s.drMarkBtnTxt, { color: theme.textMuted }]}>✓ Прочитано</Text>
+          </View>
+        ) : (
+          <TouchableOpacity style={[s.drMarkBtn, { backgroundColor: '#4A7C59' }]} onPress={onMarkRead}>
+            <Text style={[s.drMarkBtnTxt, { color: '#FFFFFF' }]}>✅ Отметить прочитанным</Text>
+          </TouchableOpacity>
+        )}
+      </SafeAreaView></SafeAreaProvider>
+    </Modal>
+  );
+};
+
 // Journal Screen
 const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: number) => void }) => {
   const { theme, bibleFont, fontScale } = useTheme();
@@ -507,6 +767,12 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
   const [dailyVerse, setDailyVerse] = useState<BibleVerse | null>(null);
   const [verseStreak, setVerseStreak] = useState(0);
   const [showDailyVerse, setShowDailyVerse] = useState(true);
+  // Daily reading state
+  const [dailyIsRead, setDailyIsRead] = useState(false);
+  const [readingStreak, setReadingStreak] = useState(0);
+  const [showDailyReadingModal, setShowDailyReadingModal] = useState(false);
+  const [dailyReadingResult, setDailyReadingResult] = useState<DailyReadingResult | null>(null);
+  const [customPattern, setCustomPattern] = useState<CustomPattern | null>(null);
   // Search & UX state
   const [searchQ, setSearchQ] = useState('');
   const [refreshing, setRefreshing] = useState(false);
@@ -534,6 +800,25 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
         }
         setVerseStreak(streak);
       });
+  }, []);
+
+  useEffect(() => {
+    const today = new Date();
+    const todayStr = fmtDate(today);
+    db.getFirstAsync<{value: string}>("SELECT value FROM app_settings WHERE key='daily_custom_pattern'")
+      .then(row => {
+        let pattern: CustomPattern | null = null;
+        if (row?.value) { try { pattern = JSON.parse(row.value); } catch {} }
+        setCustomPattern(pattern);
+        try {
+          const result = getFullDailyReading(today, pattern || undefined);
+          setDailyReadingResult(result);
+        } catch (e) { console.warn('DailyReading compute error:', e); }
+      });
+    getDailyReadingStatus(todayStr).then(({ isRead, streak }) => {
+      setDailyIsRead(isRead);
+      setReadingStreak(streak);
+    });
   }, []);
 
   const load = useCallback(async () => {
@@ -582,6 +867,40 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
       const end = f.end_date || fmtDate(new Date());
       return entryDate >= start && entryDate <= end;
     });
+  };
+
+  const saveVerseToJournal = async (title: string, text: string, _verseRef: string) => {
+    try {
+      const block: Block = { id: genId(), type: 'verse', content: JSON.stringify({
+        book: '', chapter: 0, verse: 0, text
+      }), boxColor: 'gold' };
+      const textBlock: Block = { id: genId(), type: 'text', content: '' };
+      await db.runAsync(
+        'INSERT INTO entries (title, content, category, linked_verses, folder_id) VALUES (?,?,?,?,?)',
+        [title, JSON.stringify([block, textBlock]), 'откровение', '[]', null]
+      );
+      const cur = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='saved_from_reading_count'");
+      const newCount = (parseInt(cur?.value || '0')) + 1;
+      await db.runAsync("INSERT OR REPLACE INTO app_settings (key,value) VALUES ('saved_from_reading_count',?)", [String(newCount)]);
+      load();
+      Alert.alert('Сохранено ✓', 'Стих добавлен в журнал');
+    } catch (e: any) { Alert.alert('Ошибка', e?.message || 'Не удалось сохранить'); }
+  };
+
+  const handleMarkRead = async () => {
+    const todayStr = fmtDate(new Date());
+    const psalmsChapters = dailyReadingResult?.psalms.map(p => p.chapter) || [];
+    const proverbsRefs = dailyReadingResult?.proverbs.map(p => `${p.chapter}:${p.verse}`) || [];
+    await markDailyRead(todayStr, dailyReadingResult?.verseOfDay.reference || '', psalmsChapters, proverbsRefs);
+    setDailyIsRead(true);
+    const { streak } = await getDailyReadingStatus(todayStr);
+    setReadingStreak(streak);
+    const stats = await getReadStats(todayStr);
+    const newAchievements = await checkAndUnlockAchievements(stats);
+    if (newAchievements.length > 0) {
+      Alert.alert('🏆 Достижение разблокировано!', newAchievements.map(a => `${a.emoji} ${a.title}`).join('\n'));
+    }
+    setShowDailyReadingModal(false);
   };
 
   const save = async () => {
@@ -784,6 +1103,11 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
           </View>
         </View>
       </View>}
+      <DailyReadingCard
+        isRead={dailyIsRead}
+        streak={readingStreak}
+        onOpenReading={() => setShowDailyReadingModal(true)}
+      />
       <FlatList data={filteredEntries} keyExtractor={i => i.id.toString()} renderItem={({ item }) => {
         const cs = catStyle(item.category), vc = vCount(item.content), pv = preview(item.content);
         const isFasting = isFastingEntry(item);
@@ -802,6 +1126,17 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
           </TouchableOpacity>
         );
       }} contentContainerStyle={s.list} refreshing={refreshing} onRefresh={onRefresh} ListEmptyComponent={<View style={s.empty}><Ionicons name="journal-outline" size={64} color={theme.border} /><Text style={[s.emptyTxt, { color: theme.textMuted }]}>{searchQ ? 'Ничего не найдено' : 'Записей пока нет'}</Text>{!searchQ && <Text style={{ color: theme.textSec, fontSize: 14, textAlign: 'center', marginTop: 8, paddingHorizontal: 40, lineHeight: 20 }}>Нажмите «+» чтобы создать первую запись. Ведите дневник снов, откровений, мыслей и молитв.</Text>}</View>} />
+
+      {showDailyReadingModal && dailyReadingResult && (
+        <DailyReadingModal
+          visible={showDailyReadingModal}
+          reading={dailyReadingResult}
+          isRead={dailyIsRead}
+          onClose={() => setShowDailyReadingModal(false)}
+          onMarkRead={handleMarkRead}
+          onSaveToJournal={saveVerseToJournal}
+        />
+      )}
 
       <Modal visible={viewing !== null} animationType="slide" statusBarTranslucent>
         <SafeAreaProvider><SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]}>
@@ -1931,6 +2266,10 @@ const SettingsScreen = () => {
   const [reminderHour, setReminderHour] = useState(9);
   const [reminderMinute, setReminderMinute] = useState(0);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [unlockedAchievements, setUnlockedAchievements] = useState<Set<string>>(new Set());
+  const [customPatternMode, setCustomPatternMode] = useState<'date' | 'custom'>('date');
+  const [customPatternBook, setCustomPatternBook] = useState('');
+  const [showBookPicker, setShowBookPicker] = useState(false);
 
   useEffect(() => { (async () => {
     const e = await db.getFirstAsync<{ c: number }>('SELECT COUNT(*) as c FROM entries');
@@ -1984,6 +2323,14 @@ const SettingsScreen = () => {
     if (remH) setReminderHour(parseInt(remH.value));
     const remM = await db.getFirstAsync<{ value: string }>("SELECT value FROM app_settings WHERE key='reminderMinute'");
     if (remM) setReminderMinute(parseInt(remM.value));
+
+    // Load achievements
+    const ach = await db.getAllAsync<{id: string}>('SELECT id FROM achievements');
+    setUnlockedAchievements(new Set(ach.map(r => r.id)));
+
+    // Load custom pattern
+    const cp = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='daily_custom_pattern'");
+    if (cp?.value) { try { const p = JSON.parse(cp.value); setCustomPatternMode(p ? 'custom' : 'date'); setCustomPatternBook(p?.bookName || ''); } catch {} }
   })(); }, []);
 
   const totalEntries = Math.max(stats.e, 1);
@@ -1994,7 +2341,7 @@ const SettingsScreen = () => {
   const exportData = async () => {
     try {
       const data = {
-        version: '4.0',
+        version: '4.1',
         exportDate: new Date().toISOString(),
         entries: await db.getAllAsync('SELECT * FROM entries'),
         bookmarks: await db.getAllAsync('SELECT * FROM bookmarks'),
@@ -2004,6 +2351,8 @@ const SettingsScreen = () => {
         folders: await db.getAllAsync('SELECT * FROM folders'),
         dailyVerseHistory: await db.getAllAsync('SELECT * FROM daily_verse_history'),
         appSettings: await db.getAllAsync('SELECT * FROM app_settings'),
+        dailyReadingHistory: await db.getAllAsync('SELECT * FROM daily_reading_history'),
+        achievements: await db.getAllAsync('SELECT * FROM achievements'),
       };
       const json = JSON.stringify(data, null, 2);
       const file = new ExpoFile(Paths.cache, 'divine_journal_backup.json');
@@ -2063,6 +2412,16 @@ const SettingsScreen = () => {
             for (const v of (data.dailyVerseHistory || [])) {
               await db.runAsync('INSERT OR IGNORE INTO daily_verse_history (id, date, verse_id, seen) VALUES (?,?,?,?)', [v.id, v.date, v.verse_id, v.seen]);
             }
+            // Import daily reading history
+            for (const r of (data.dailyReadingHistory || [])) {
+              await db.runAsync('INSERT OR REPLACE INTO daily_reading_history (date, read_at, verse_of_day_ref, psalms_read, proverbs_read) VALUES (?,?,?,?,?)',
+                [r.date, r.read_at, r.verse_of_day_ref, r.psalms_read, r.proverbs_read]);
+            }
+            // Import achievements
+            for (const a of (data.achievements || [])) {
+              await db.runAsync('INSERT OR IGNORE INTO achievements (id, unlocked_at, title, description) VALUES (?,?,?,?)',
+                [a.id, a.unlocked_at, a.title, a.description]);
+            }
             Alert.alert('Готово', 'Данные успешно импортированы. Перезапустите приложение.');
           } catch (e) { Alert.alert('Ошибка', 'Не удалось импортировать данные'); }
         }},
@@ -2094,6 +2453,20 @@ const SettingsScreen = () => {
   };
 
   const fmtTime = (h: number, m: number) => `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+
+  const saveCustomPattern = async () => {
+    let pattern: CustomPattern | null = null;
+    if (customPatternMode === 'custom' && customPatternBook) {
+      pattern = { bookName: customPatternBook };
+    }
+    await db.runAsync("INSERT OR REPLACE INTO app_settings (key,value) VALUES ('daily_custom_pattern',?)", [JSON.stringify(pattern)]);
+    if (pattern) {
+      const stats = await getReadStats(fmtDate(new Date()));
+      await checkAndUnlockAchievements({ ...stats, hasCustomPattern: true });
+      setUnlockedAchievements(prev => new Set([...prev, 'custom_pattern']));
+    }
+    Alert.alert('Сохранено', 'Паттерн стихов обновлён');
+  };
 
   return (
     <View style={[s.screen, { backgroundColor: theme.bg }]}><View style={s.header}><Text style={[s.headerTxt, { color: theme.text }]}>⚙️ Настройки</Text></View>
@@ -2142,11 +2515,29 @@ const SettingsScreen = () => {
           </View>
         </View>}
 
-        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>ДОСТИЖЕНИЯ</Text>
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>ДОСТИЖЕНИЯ ЗАПИСЕЙ</Text>
           <View style={{ backgroundColor: theme.surface, borderRadius: 12, padding: 16, gap: 12 }}>
             <View style={s.achieveRow}><Ionicons name="flame" size={20} color={theme.warning} /><Text style={{ fontSize: 14, color: theme.text }}>Серия записей</Text><Text style={{ marginLeft: 'auto', fontSize: 16, fontWeight: '700', color: theme.warning }}>{stats.streak} дн.</Text></View>
             <View style={s.achieveRow}><Ionicons name="heart" size={20} color="#9C27B0" /><Text style={{ fontSize: 14, color: theme.text }}>Дней поста</Text><Text style={{ marginLeft: 'auto', fontSize: 16, fontWeight: '700', color: '#9C27B0' }}>{stats.fastDays}</Text></View>
             <View style={s.achieveRow}><Ionicons name="book" size={20} color={theme.success} /><Text style={{ fontSize: 14, color: theme.text }}>Глав прочитано</Text><Text style={{ marginLeft: 'auto', fontSize: 16, fontWeight: '700', color: theme.success }}>{stats.r}</Text></View>
+          </View>
+        </View>
+
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>ДОСТИЖЕНИЯ ЧТЕНИЯ</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {ACHIEVEMENTS.map(a => {
+              const isUnlocked = unlockedAchievements.has(a.id);
+              return (
+                <TouchableOpacity key={a.id}
+                  style={[s.achieveBadge, { borderColor: isUnlocked ? theme.primary : theme.border, opacity: isUnlocked ? 1 : 0.4 }]}
+                  onPress={() => Alert.alert(`${a.emoji} ${a.title}`, a.desc)}
+                >
+                  <Text style={{ fontSize: 28 }}>{a.emoji}</Text>
+                  {!isUnlocked && <Ionicons name="lock-closed" size={12} color={theme.textMuted} style={{ position: 'absolute', top: 4, right: 4 }} />}
+                  <Text style={{ fontSize: 10, color: theme.textSec, textAlign: 'center', marginTop: 4 }} numberOfLines={2}>{a.title}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
         </View>
 
@@ -2217,6 +2608,35 @@ const SettingsScreen = () => {
           </View>
         </View>
 
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>ЕЖЕДНЕВНЫЙ СТИХ</Text>
+          <View style={{ backgroundColor: theme.surface, borderRadius: 12, padding: 16, gap: 12 }}>
+            <Text style={{ fontSize: 14, color: theme.textSec, marginBottom: 4 }}>Паттерн поиска</Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity
+                style={{ flex: 1, padding: 12, borderRadius: 10, borderWidth: 2, borderColor: customPatternMode === 'date' ? theme.primary : theme.border, alignItems: 'center' }}
+                onPress={() => setCustomPatternMode('date')}
+              >
+                <Text style={{ fontSize: 14, color: customPatternMode === 'date' ? theme.primary : theme.textSec, fontWeight: customPatternMode === 'date' ? '600' : '400' }}>По дате</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ flex: 1, padding: 12, borderRadius: 10, borderWidth: 2, borderColor: customPatternMode === 'custom' ? theme.primary : theme.border, alignItems: 'center' }}
+                onPress={() => setCustomPatternMode('custom')}
+              >
+                <Text style={{ fontSize: 14, color: customPatternMode === 'custom' ? theme.primary : theme.textSec, fontWeight: customPatternMode === 'custom' ? '600' : '400' }}>Конкретная книга</Text>
+              </TouchableOpacity>
+            </View>
+            {customPatternMode === 'custom' && (
+              <TouchableOpacity style={{ padding: 12, borderRadius: 10, borderWidth: 1, borderColor: theme.border, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }} onPress={() => setShowBookPicker(true)}>
+                <Text style={{ fontSize: 14, color: customPatternBook ? theme.text : theme.textMuted }}>{customPatternBook || 'Выберите книгу'}</Text>
+                <Ionicons name="chevron-down" size={18} color={theme.textMuted} />
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={[s.saveBtn, { margin: 0, backgroundColor: theme.primary }]} onPress={saveCustomPattern}>
+              <Text style={[s.saveBtnTxt, { color: theme.textOn }]}>Сохранить</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>ДАННЫЕ</Text>
           <TouchableOpacity style={[s.sheetItem, { borderRadius: 12, backgroundColor: theme.surface, marginBottom: 8 }]} onPress={exportData}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
@@ -2234,7 +2654,7 @@ const SettingsScreen = () => {
           </TouchableOpacity>
         </View>
 
-        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 4.0</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 4.1</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
       </ScrollView>
       {showGraph && <GraphView entries={allEntries} folders={allFolders} onClose={() => setShowGraph(false)} />}
       {showTimePicker && (
@@ -2258,6 +2678,26 @@ const SettingsScreen = () => {
               <TouchableOpacity style={[s.saveBtn, { backgroundColor: theme.primary }]} onPress={() => updateReminderTime(reminderHour, reminderMinute)}>
                 <Text style={[s.saveBtnTxt, { color: theme.textOn }]}>Сохранить</Text>
               </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+      )}
+      {showBookPicker && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setShowBookPicker(false)}>
+          <TouchableOpacity style={s.sheetOverlay} activeOpacity={1} onPress={() => setShowBookPicker(false)}>
+            <View style={[s.sheet, { backgroundColor: theme.bg }]}>
+              <View style={[s.sheetHdr, { borderBottomColor: theme.border }]}>
+                <Text style={[s.sheetTitle, { color: theme.text }]}>Выберите книгу</Text>
+                <TouchableOpacity onPress={() => setShowBookPicker(false)}><Ionicons name="close" size={24} color={theme.text} /></TouchableOpacity>
+              </View>
+              <ScrollView style={s.sheetList}>
+                {BIBLE_BOOKS.map(b => (
+                  <TouchableOpacity key={b.name} style={[s.sheetItem, { borderBottomColor: theme.borderLight }]} onPress={() => { setCustomPatternBook(b.name); setShowBookPicker(false); }}>
+                    <Text style={[s.sheetItemTxt, { color: theme.text }]}>{b.name}</Text>
+                    <Text style={[s.sheetItemSub, { color: theme.textMuted }]}>{b.chapters} гл.</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
             </View>
           </TouchableOpacity>
         </Modal>
@@ -2347,4 +2787,32 @@ const s = StyleSheet.create({
   dailyVerseTxt: { fontSize: 15, fontStyle: 'italic', color: C.text, lineHeight: 22, marginTop: 8, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif' },
   dailyVerseRef: { fontSize: 13, fontWeight: '600', color: C.primary },
   streakBadge: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#FFF3E0', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10 },
+  // Daily reading card styles
+  readingCard: { marginHorizontal: 16, marginBottom: 8, padding: 16, borderRadius: 16, borderWidth: 1.5 },
+  readingCardTitle: { fontSize: 16, fontWeight: '700', marginBottom: 2 },
+  readingCardDate: { fontSize: 12, marginBottom: 12 },
+  readingCardBtn: { padding: 14, borderRadius: 12, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 8 },
+  readingCardBtnTxt: { fontSize: 15, fontWeight: '600' },
+  readingStreakBadge: { position: 'absolute', top: 12, right: 12, flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  // Daily reading modal styles
+  drSection: { marginBottom: 24 },
+  drSectionHdr: { fontSize: 16, fontWeight: '700', marginBottom: 12 },
+  drVerseCard: { backgroundColor: '#FFF8E7', borderRadius: 16, padding: 20, borderWidth: 1.5, borderColor: '#D4A574', marginBottom: 8 },
+  drVerseTxt: { fontSize: 17, fontStyle: 'italic', lineHeight: 26, marginVertical: 12 },
+  drVerseRef: { fontSize: 14, fontWeight: '600' },
+  drVerseActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12, marginTop: 12 },
+  drActionBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
+  drActionBtnTxt: { fontSize: 13, fontWeight: '600' },
+  drPatternCard: { borderRadius: 12, padding: 14, marginBottom: 8 },
+  drPsalmCard: { borderRadius: 12, marginBottom: 8, overflow: 'hidden' },
+  drPsalmHdr: { flexDirection: 'row', alignItems: 'center', padding: 14, gap: 8 },
+  drPsalmBody: { padding: 14, paddingTop: 0 },
+  drPsalmVerse: { flexDirection: 'row', marginBottom: 8, gap: 8 },
+  drPsalmVNum: { fontSize: 12, fontWeight: '700', minWidth: 24 },
+  drPsalmVTxt: { flex: 1, fontSize: 14, lineHeight: 22 },
+  drMarkBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 18, margin: 16, borderRadius: 16 },
+  drMarkBtnTxt: { fontSize: 17, fontWeight: '700' },
+  drEmptyTxt: { fontStyle: 'italic', textAlign: 'center', padding: 12 },
+  // Achievement badge styles
+  achieveBadge: { width: (SW - 32 - 28) / 4, alignItems: 'center', padding: 10, borderRadius: 14, borderWidth: 1.5, position: 'relative' },
 });
