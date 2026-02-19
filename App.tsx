@@ -188,7 +188,7 @@ const getBackupDir = (): Directory => {
 };
 
 const collectBackupData = async () => ({
-  version: '4.3',
+  version: '4.4',
   exportDate: new Date().toISOString(),
   entries: await db.getAllAsync('SELECT * FROM entries'),
   bookmarks: await db.getAllAsync('SELECT * FROM bookmarks'),
@@ -815,18 +815,18 @@ const DailyReadingModal = ({ visible, reading, isRead, onClose, onMarkRead, onSa
               </View>
             ))}
           </View>
-        </ScrollView>
 
-        {/* Footer button */}
-        {isRead ? (
-          <View style={[s.drMarkBtn, { backgroundColor: theme.borderLight }]}>
-            <Text style={[s.drMarkBtnTxt, { color: theme.textMuted }]}>✓ Прочитано</Text>
-          </View>
-        ) : (
-          <TouchableOpacity style={[s.drMarkBtn, { backgroundColor: '#4A7C59' }]} onPress={onMarkRead}>
-            <Text style={[s.drMarkBtnTxt, { color: '#FFFFFF' }]}>✅ Отметить прочитанным</Text>
-          </TouchableOpacity>
-        )}
+          {/* Mark as read button - inside scroll so layout is always bounded */}
+          {isRead ? (
+            <View style={[s.drMarkBtn, { backgroundColor: theme.borderLight }]}>
+              <Text style={[s.drMarkBtnTxt, { color: theme.textMuted }]}>✓ Прочитано</Text>
+            </View>
+          ) : (
+            <TouchableOpacity style={[s.drMarkBtn, { backgroundColor: '#4A7C59' }]} onPress={onMarkRead}>
+              <Text style={[s.drMarkBtnTxt, { color: '#FFFFFF' }]}>✅ Отметить прочитанным</Text>
+            </TouchableOpacity>
+          )}
+        </ScrollView>
       </SafeAreaView></SafeAreaProvider>
     </Modal>
   );
@@ -1208,7 +1208,7 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
         streak={readingStreak}
         onOpenReading={() => setShowDailyReadingModal(true)}
       />
-      <FlatList style={{ flex: 1 }} data={filteredEntries} keyExtractor={i => i.id.toString()} renderItem={({ item }) => {
+      <FlatList data={filteredEntries} keyExtractor={i => i.id.toString()} renderItem={({ item }) => {
         const cs = catStyle(item.category), vc = vCount(item.content), pv = preview(item.content);
         const isFasting = isFastingEntry(item);
         return (
@@ -1682,7 +1682,7 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
           );
         })}
       </View>
-      <ScrollView style={s.dayDetails} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+      <ScrollView style={s.dayDetails} keyboardShouldPersistTaps="handled" nestedScrollEnabled contentContainerStyle={{ paddingBottom: 40 }}>
         <Text style={[s.dayTitle, { color: theme.text }]}>{fmtDateRu(selDate)}</Text>
         <View style={[s.daySec, { backgroundColor: theme.surface }]}>
           <View style={s.daySecHdr}>
@@ -2931,7 +2931,7 @@ const SettingsScreen = () => {
           </TouchableOpacity>
         </View>
 
-        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 4.3</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 4.4</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
       </ScrollView>
       {showGraph && <GraphView entries={allEntries} folders={allFolders} onClose={() => setShowGraph(false)} />}
       {showTimePicker && (
