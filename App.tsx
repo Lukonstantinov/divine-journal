@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { BIBLE_VERSES, BIBLE_BOOKS, BibleVerse, BibleBook } from './BibleVerses';
 import { SafeAreaProvider, SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Text as SvgText, G } from 'react-native-svg';
-import { File as ExpoFile, Paths } from 'expo-file-system';
+import { File as ExpoFile, Directory, Paths } from 'expo-file-system';
 import * as Sharing from 'expo-sharing';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Notifications from 'expo-notifications';
@@ -174,6 +174,104 @@ const requestNotificationPermission = async (): Promise<boolean> => {
   return status === 'granted';
 };
 
+// Auto-backup helpers
+type BackupInterval = 'daily' | 'weekly' | 'monthly' | 'custom';
+type BackupFileInfo = { name: string; uri: string; date: string; sizeKB: number };
+
+const BACKUP_DIR_NAME = 'backups';
+const BACKUP_INTERVALS: Record<string, number> = { daily: 1, weekly: 7, monthly: 30 };
+
+const getBackupDir = (): Directory => {
+  const dir = new Directory(Paths.document, BACKUP_DIR_NAME);
+  if (!dir.exists) dir.create();
+  return dir;
+};
+
+const collectBackupData = async () => ({
+  version: '4.3',
+  exportDate: new Date().toISOString(),
+  entries: await db.getAllAsync('SELECT * FROM entries'),
+  bookmarks: await db.getAllAsync('SELECT * FROM bookmarks'),
+  readingPlan: await db.getAllAsync('SELECT * FROM reading_plan'),
+  dailyNotes: await db.getAllAsync('SELECT * FROM daily_notes'),
+  fasting: await db.getAllAsync('SELECT * FROM fasting'),
+  folders: await db.getAllAsync('SELECT * FROM folders'),
+  dailyVerseHistory: await db.getAllAsync('SELECT * FROM daily_verse_history'),
+  appSettings: await db.getAllAsync('SELECT * FROM app_settings'),
+  dailyReadingHistory: await db.getAllAsync('SELECT * FROM daily_reading_history'),
+  achievements: await db.getAllAsync('SELECT * FROM achievements'),
+});
+
+const listBackupFiles = async (): Promise<BackupFileInfo[]> => {
+  try {
+    const dir = getBackupDir();
+    const items = dir.list();
+    const files: BackupFileInfo[] = [];
+    for (const item of items) {
+      if (item instanceof Directory) continue;
+      const fname = item.name;
+      if (!fname.endsWith('.json')) continue;
+      try {
+        const content = await item.text();
+        const parsed = JSON.parse(content);
+        const sizeKB = Math.round(content.length / 1024);
+        files.push({ name: fname, uri: item.uri, date: parsed.exportDate || '', sizeKB });
+      } catch { files.push({ name: fname, uri: item.uri, date: '', sizeKB: 0 }); }
+    }
+    files.sort((a, b) => b.date.localeCompare(a.date));
+    return files;
+  } catch { return []; }
+};
+
+const cleanupOldBackups = async (maxFiles: number) => {
+  const files = await listBackupFiles();
+  if (files.length <= maxFiles) return;
+  const toDelete = files.slice(maxFiles);
+  for (const f of toDelete) {
+    try { new ExpoFile(f.uri).delete(); } catch {}
+  }
+};
+
+const performAutoBackup = async (maxFiles: number = 10): Promise<boolean> => {
+  try {
+    const data = await collectBackupData();
+    const json = JSON.stringify(data, null, 2);
+    const now = new Date();
+    const ts = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}_${String(now.getHours()).padStart(2, '0')}-${String(now.getMinutes()).padStart(2, '0')}`;
+    const dir = getBackupDir();
+    const file = new ExpoFile(dir, `backup_${ts}.json`);
+    file.write(json);
+    await db.runAsync("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('lastAutoBackupDate', ?)", [now.toISOString()]);
+    await cleanupOldBackups(maxFiles);
+    return true;
+  } catch (e) { console.warn('Auto-backup failed:', e); return false; }
+};
+
+const shouldAutoBackup = async (): Promise<boolean> => {
+  try {
+    const enabled = await db.getFirstAsync<{ value: string }>("SELECT value FROM app_settings WHERE key='autoBackupEnabled'");
+    if (!enabled || enabled.value !== '1') return false;
+    const lastRow = await db.getFirstAsync<{ value: string }>("SELECT value FROM app_settings WHERE key='lastAutoBackupDate'");
+    if (!lastRow) return true; // never backed up
+    const intervalRow = await db.getFirstAsync<{ value: string }>("SELECT value FROM app_settings WHERE key='autoBackupInterval'");
+    const interval = intervalRow?.value || 'daily';
+    const customDaysRow = await db.getFirstAsync<{ value: string }>("SELECT value FROM app_settings WHERE key='autoBackupCustomDays'");
+    const days = BACKUP_INTERVALS[interval] || parseInt(customDaysRow?.value || '1') || 1;
+    const last = new Date(lastRow.value).getTime();
+    const elapsed = Date.now() - last;
+    return elapsed >= days * 86400000;
+  } catch { return false; }
+};
+
+const tryAutoBackup = async () => {
+  try {
+    if (!(await shouldAutoBackup())) return;
+    const maxRow = await db.getFirstAsync<{ value: string }>("SELECT value FROM app_settings WHERE key='autoBackupMaxFiles'");
+    const maxFiles = parseInt(maxRow?.value || '10') || 10;
+    await performAutoBackup(maxFiles);
+  } catch {}
+};
+
 async function getDailyReadingStatus(todayStr: string): Promise<{ isRead: boolean; streak: number }> {
   try {
     const row = await db.getFirstAsync<{ date: string }>(
@@ -324,7 +422,7 @@ const AppContent = () => {
   const [ready, setReady] = useState(false);
   const [navTarget, setNavTarget] = useState<NavTarget | null>(null);
 
-  useEffect(() => { initDb().then(() => setReady(true)); }, []);
+  useEffect(() => { initDb().then(() => { setReady(true); tryAutoBackup(); }); }, []);
 
   const navigateToBible = (book: string, chapter: number) => {
     setNavTarget({ book, chapter });
@@ -2272,6 +2370,15 @@ const SettingsScreen = () => {
   const [customPatternMode, setCustomPatternMode] = useState<'date' | 'custom'>('date');
   const [customPatternBook, setCustomPatternBook] = useState('');
   const [showBookPicker, setShowBookPicker] = useState(false);
+  // Auto-backup state
+  const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
+  const [autoBackupInterval, setAutoBackupInterval] = useState<BackupInterval>('daily');
+  const [autoBackupCustomDays, setAutoBackupCustomDays] = useState('3');
+  const [autoBackupMaxFiles, setAutoBackupMaxFiles] = useState(10);
+  const [lastBackupDate, setLastBackupDate] = useState<string | null>(null);
+  const [backupFiles, setBackupFiles] = useState<BackupFileInfo[]>([]);
+  const [showBackupHistory, setShowBackupHistory] = useState(false);
+  const [showIntervalPicker, setShowIntervalPicker] = useState(false);
 
   useEffect(() => { (async () => {
     const e = await db.getFirstAsync<{ c: number }>('SELECT COUNT(*) as c FROM entries');
@@ -2333,6 +2440,19 @@ const SettingsScreen = () => {
     // Load custom pattern
     const cp = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='daily_custom_pattern'");
     if (cp?.value) { try { const p = JSON.parse(cp.value); setCustomPatternMode(p ? 'custom' : 'date'); setCustomPatternBook(p?.bookName || ''); } catch {} }
+
+    // Load auto-backup settings
+    const abEnabled = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='autoBackupEnabled'");
+    if (abEnabled?.value === '1') setAutoBackupEnabled(true);
+    const abInterval = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='autoBackupInterval'");
+    if (abInterval?.value) setAutoBackupInterval(abInterval.value as BackupInterval);
+    const abCustom = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='autoBackupCustomDays'");
+    if (abCustom?.value) setAutoBackupCustomDays(abCustom.value);
+    const abMax = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='autoBackupMaxFiles'");
+    if (abMax?.value) setAutoBackupMaxFiles(parseInt(abMax.value) || 10);
+    const abLast = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='lastAutoBackupDate'");
+    if (abLast?.value) setLastBackupDate(abLast.value);
+    setBackupFiles(await listBackupFiles());
   })(); }, []);
 
   const totalEntries = Math.max(stats.e, 1);
@@ -2342,23 +2462,10 @@ const SettingsScreen = () => {
 
   const exportData = async () => {
     try {
-      const data = {
-        version: '4.2',
-        exportDate: new Date().toISOString(),
-        entries: await db.getAllAsync('SELECT * FROM entries'),
-        bookmarks: await db.getAllAsync('SELECT * FROM bookmarks'),
-        readingPlan: await db.getAllAsync('SELECT * FROM reading_plan'),
-        dailyNotes: await db.getAllAsync('SELECT * FROM daily_notes'),
-        fasting: await db.getAllAsync('SELECT * FROM fasting'),
-        folders: await db.getAllAsync('SELECT * FROM folders'),
-        dailyVerseHistory: await db.getAllAsync('SELECT * FROM daily_verse_history'),
-        appSettings: await db.getAllAsync('SELECT * FROM app_settings'),
-        dailyReadingHistory: await db.getAllAsync('SELECT * FROM daily_reading_history'),
-        achievements: await db.getAllAsync('SELECT * FROM achievements'),
-      };
+      const data = await collectBackupData();
       const json = JSON.stringify(data, null, 2);
       const file = new ExpoFile(Paths.cache, 'divine_journal_backup.json');
-      await file.write(json);
+      file.write(json);
       const canShare = await Sharing.isAvailableAsync();
       if (canShare) {
         await Sharing.shareAsync(file.uri, { mimeType: 'application/json', dialogTitle: 'Экспорт данных' });
@@ -2366,6 +2473,108 @@ const SettingsScreen = () => {
         Alert.alert('Экспорт', `Файл сохранён: ${file.uri}`);
       }
     } catch (e: any) { Alert.alert('Ошибка экспорта', e?.message || 'Не удалось экспортировать данные'); }
+  };
+
+  const saveBackupSetting = async (key: string, value: string) => {
+    await db.runAsync("INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)", [key, value]);
+  };
+
+  const toggleAutoBackup = async (enabled: boolean) => {
+    setAutoBackupEnabled(enabled);
+    await saveBackupSetting('autoBackupEnabled', enabled ? '1' : '0');
+    if (enabled) {
+      const ok = await performAutoBackup(autoBackupMaxFiles);
+      if (ok) {
+        setLastBackupDate(new Date().toISOString());
+        setBackupFiles(await listBackupFiles());
+      }
+    }
+  };
+
+  const changeInterval = async (interval: BackupInterval) => {
+    setAutoBackupInterval(interval);
+    await saveBackupSetting('autoBackupInterval', interval);
+    setShowIntervalPicker(false);
+  };
+
+  const saveCustomDays = async (days: string) => {
+    setAutoBackupCustomDays(days);
+    await saveBackupSetting('autoBackupCustomDays', days);
+  };
+
+  const changeMaxFiles = async (delta: number) => {
+    const next = Math.max(1, Math.min(50, autoBackupMaxFiles + delta));
+    setAutoBackupMaxFiles(next);
+    await saveBackupSetting('autoBackupMaxFiles', String(next));
+  };
+
+  const manualBackupNow = async () => {
+    const ok = await performAutoBackup(autoBackupMaxFiles);
+    if (ok) {
+      setLastBackupDate(new Date().toISOString());
+      setBackupFiles(await listBackupFiles());
+      Alert.alert('Готово', 'Резервная копия создана');
+    } else {
+      Alert.alert('Ошибка', 'Не удалось создать резервную копию');
+    }
+  };
+
+  const restoreFromBackup = async (fileInfo: BackupFileInfo) => {
+    try {
+      const file = new ExpoFile(fileInfo.uri);
+      const json = await file.text();
+      const data = JSON.parse(json);
+      if (!data.version || !data.entries) { Alert.alert('Ошибка', 'Неверный формат файла'); return; }
+      Alert.alert('Восстановление', `Файл от ${new Date(fileInfo.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' })}.\n\n${data.entries?.length || 0} записей, ${data.bookmarks?.length || 0} закладок.\n\nЭто заменит текущие данные.`, [
+        { text: 'Отмена', style: 'cancel' },
+        { text: 'Восстановить', style: 'destructive', onPress: async () => {
+          try {
+            await db.execAsync('DELETE FROM entries; DELETE FROM bookmarks; DELETE FROM reading_plan; DELETE FROM daily_notes; DELETE FROM fasting; DELETE FROM folders; DELETE FROM daily_verse_history;');
+            for (const e of (data.entries || [])) { await db.runAsync('INSERT INTO entries (id, title, content, category, created_at, linked_verses, folder_id) VALUES (?,?,?,?,?,?,?)', [e.id, e.title, e.content, e.category, e.created_at, e.linked_verses, e.folder_id || null]); }
+            for (const b of (data.bookmarks || [])) { await db.runAsync('INSERT OR IGNORE INTO bookmarks (id, verse_id, created_at) VALUES (?,?,?)', [b.id, b.verse_id, b.created_at]); }
+            for (const r of (data.readingPlan || [])) { await db.runAsync('INSERT OR REPLACE INTO reading_plan (id, date, book, chapter, completed) VALUES (?,?,?,?,?)', [r.id, r.date, r.book, r.chapter, r.completed]); }
+            for (const n of (data.dailyNotes || [])) { await db.runAsync('INSERT OR REPLACE INTO daily_notes (id, date, notes) VALUES (?,?,?)', [n.id, n.date, n.notes]); }
+            for (const f of (data.fasting || [])) { await db.runAsync('INSERT INTO fasting (id, start_date, end_date, notes, created_at) VALUES (?,?,?,?,?)', [f.id, f.start_date, f.end_date, f.notes, f.created_at]); }
+            for (const f of (data.folders || [])) { await db.runAsync('INSERT INTO folders (id, name, color, icon, sort_order) VALUES (?,?,?,?,?)', [f.id, f.name, f.color, f.icon, f.sort_order]); }
+            for (const v of (data.dailyVerseHistory || [])) { await db.runAsync('INSERT OR IGNORE INTO daily_verse_history (id, date, verse_id, seen) VALUES (?,?,?,?)', [v.id, v.date, v.verse_id, v.seen]); }
+            for (const r of (data.dailyReadingHistory || [])) { await db.runAsync('INSERT OR REPLACE INTO daily_reading_history (date, read_at, verse_of_day_ref, psalms_read, proverbs_read) VALUES (?,?,?,?,?)', [r.date, r.read_at, r.verse_of_day_ref, r.psalms_read, r.proverbs_read]); }
+            for (const a of (data.achievements || [])) { await db.runAsync('INSERT OR IGNORE INTO achievements (id, unlocked_at, title, description) VALUES (?,?,?,?)', [a.id, a.unlocked_at, a.title, a.description]); }
+            Alert.alert('Готово', 'Данные успешно восстановлены. Перезапустите приложение.');
+          } catch (e) { Alert.alert('Ошибка', 'Не удалось восстановить данные'); }
+        }},
+      ]);
+    } catch { Alert.alert('Ошибка', 'Не удалось прочитать файл'); }
+  };
+
+  const deleteBackupFile = async (fileInfo: BackupFileInfo) => {
+    Alert.alert('Удалить копию?', `${fileInfo.name}`, [
+      { text: 'Отмена', style: 'cancel' },
+      { text: 'Удалить', style: 'destructive', onPress: async () => {
+        try { new ExpoFile(fileInfo.uri).delete(); } catch {}
+        setBackupFiles(await listBackupFiles());
+      }},
+    ]);
+  };
+
+  const getBackupStatusColor = () => {
+    if (!lastBackupDate) return theme.error;
+    const days = (Date.now() - new Date(lastBackupDate).getTime()) / 86400000;
+    const intervalDays = autoBackupInterval === 'custom' ? (parseInt(autoBackupCustomDays) || 1) : (BACKUP_INTERVALS[autoBackupInterval] || 1);
+    if (days <= intervalDays) return theme.success;
+    if (days <= intervalDays * 2) return theme.warning;
+    return theme.error;
+  };
+
+  const getBackupStatusText = () => {
+    if (!lastBackupDate) return 'Никогда';
+    return fmtRelTime(lastBackupDate);
+  };
+
+  const getIntervalLabel = (interval: BackupInterval, customDays?: string) => {
+    if (interval === 'daily') return 'Ежедневно';
+    if (interval === 'weekly') return 'Еженедельно';
+    if (interval === 'monthly') return 'Ежемесячно';
+    return `Каждые ${customDays || '3'} дн.`;
   };
 
   const importData = async () => {
@@ -2639,24 +2848,90 @@ const SettingsScreen = () => {
           </View>
         </View>
 
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>АВТОМАТИЧЕСКОЕ РЕЗЕРВНОЕ КОПИРОВАНИЕ</Text>
+          <View style={{ backgroundColor: theme.surface, borderRadius: 12, padding: 16, gap: 12 }}>
+            {/* Status indicator */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+              <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: getBackupStatusColor() }} />
+              <Text style={{ fontSize: 13, color: theme.textSec }}>Последняя копия: {getBackupStatusText()}</Text>
+              {backupFiles.length > 0 && <Text style={{ fontSize: 12, color: theme.textMuted, marginLeft: 'auto' }}>{backupFiles.length} файл.</Text>}
+            </View>
+
+            {/* Toggle */}
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 4, borderTopWidth: 1, borderTopColor: theme.borderLight }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
+                <Ionicons name="sync" size={22} color={theme.primary} />
+                <View><Text style={{ fontSize: 15, fontWeight: '500', color: theme.text }}>Авто-копирование</Text><Text style={{ fontSize: 12, color: theme.textMuted }}>При открытии приложения</Text></View>
+              </View>
+              <TouchableOpacity style={{ width: 52, height: 30, borderRadius: 15, backgroundColor: autoBackupEnabled ? theme.success : theme.borderLight, justifyContent: 'center', paddingHorizontal: 2 }} onPress={() => toggleAutoBackup(!autoBackupEnabled)}>
+                <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: theme.textOn, alignSelf: autoBackupEnabled ? 'flex-end' : 'flex-start', elevation: 2 }} />
+              </TouchableOpacity>
+            </View>
+
+            {autoBackupEnabled && <>
+              {/* Interval selector */}
+              <TouchableOpacity style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTopWidth: 1, borderTopColor: theme.borderLight }} onPress={() => setShowIntervalPicker(true)}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Ionicons name="calendar" size={20} color={theme.primary} />
+                  <Text style={{ fontSize: 14, color: theme.textSec }}>Периодичность</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: theme.primary }}>{getIntervalLabel(autoBackupInterval, autoBackupCustomDays)}</Text>
+                  <Ionicons name="chevron-forward" size={16} color={theme.textMuted} />
+                </View>
+              </TouchableOpacity>
+
+              {/* Max files */}
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 8, borderTopWidth: 1, borderTopColor: theme.borderLight }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Ionicons name="albums" size={20} color={theme.primary} />
+                  <Text style={{ fontSize: 14, color: theme.textSec }}>Хранить копий</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <TouchableOpacity onPress={() => changeMaxFiles(-1)} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: theme.borderLight, justifyContent: 'center', alignItems: 'center' }}>
+                    <Ionicons name="remove" size={16} color={theme.text} />
+                  </TouchableOpacity>
+                  <Text style={{ fontSize: 16, fontWeight: '600', color: theme.primary, width: 30, textAlign: 'center' }}>{autoBackupMaxFiles}</Text>
+                  <TouchableOpacity onPress={() => changeMaxFiles(1)} style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: theme.borderLight, justifyContent: 'center', alignItems: 'center' }}>
+                    <Ionicons name="add" size={16} color={theme.text} />
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </>}
+
+            {/* Manual backup button */}
+            <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderTopWidth: 1, borderTopColor: theme.borderLight, marginTop: 4 }} onPress={manualBackupNow}>
+              <Ionicons name="download" size={18} color={theme.primary} />
+              <Text style={{ fontSize: 14, fontWeight: '600', color: theme.primary }}>Создать копию сейчас</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
         <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>ДАННЫЕ</Text>
+          {backupFiles.length > 0 && <TouchableOpacity style={[s.sheetItem, { borderRadius: 12, backgroundColor: theme.surface, marginBottom: 8 }]} onPress={() => setShowBackupHistory(true)}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+              <Ionicons name="time" size={22} color={theme.warning} />
+              <View><Text style={{ fontSize: 15, fontWeight: '500', color: theme.text }}>История копий</Text><Text style={{ fontSize: 12, color: theme.textMuted }}>{backupFiles.length} сохранённых копий</Text></View>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
+          </TouchableOpacity>}
           <TouchableOpacity style={[s.sheetItem, { borderRadius: 12, backgroundColor: theme.surface, marginBottom: 8 }]} onPress={exportData}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <Ionicons name="cloud-upload" size={22} color={theme.success} />
-              <View><Text style={{ fontSize: 15, fontWeight: '500', color: theme.text }}>Экспорт данных</Text><Text style={{ fontSize: 12, color: theme.textMuted }}>Сохранить резервную копию</Text></View>
+              <Ionicons name="share" size={22} color={theme.success} />
+              <View><Text style={{ fontSize: 15, fontWeight: '500', color: theme.text }}>Экспорт данных</Text><Text style={{ fontSize: 12, color: theme.textMuted }}>Поделиться резервной копией</Text></View>
             </View>
             <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
           </TouchableOpacity>
           <TouchableOpacity style={[s.sheetItem, { borderRadius: 12, backgroundColor: theme.surface }]} onPress={importData}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               <Ionicons name="cloud-download" size={22} color={theme.primary} />
-              <View><Text style={{ fontSize: 15, fontWeight: '500', color: theme.text }}>Импорт данных</Text><Text style={{ fontSize: 12, color: theme.textMuted }}>Восстановить из резервной копии</Text></View>
+              <View><Text style={{ fontSize: 15, fontWeight: '500', color: theme.text }}>Импорт данных</Text><Text style={{ fontSize: 12, color: theme.textMuted }}>Восстановить из внешнего файла</Text></View>
             </View>
             <Ionicons name="chevron-forward" size={20} color={theme.textMuted} />
           </TouchableOpacity>
         </View>
 
-        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 4.2</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 4.3</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
       </ScrollView>
       {showGraph && <GraphView entries={allEntries} folders={allFolders} onClose={() => setShowGraph(false)} />}
       {showTimePicker && (
@@ -2699,6 +2974,79 @@ const SettingsScreen = () => {
                     <Text style={[s.sheetItemTxt, { color: theme.text }]}>{b.name}</Text>
                     <Text style={[s.sheetItemSub, { color: theme.textMuted }]}>{b.chapters} гл.</Text>
                   </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+      )}
+      {showIntervalPicker && (
+        <Modal visible transparent animationType="fade" onRequestClose={() => setShowIntervalPicker(false)}>
+          <TouchableOpacity style={s.overlay} activeOpacity={1} onPress={() => setShowIntervalPicker(false)}>
+            <View style={[s.picker, { backgroundColor: theme.surface }]}>
+              <Text style={[s.pickerTitle, { color: theme.text }]}>Периодичность</Text>
+              {([['daily', 'Ежедневно', 'Каждый день'], ['weekly', 'Еженедельно', 'Каждые 7 дней'], ['monthly', 'Ежемесячно', 'Каждые 30 дней'], ['custom', 'Свой интервал', '']] as const).map(([id, label, sub]) => (
+                <TouchableOpacity key={id} style={{ flexDirection: 'row', alignItems: 'center', padding: 14, borderRadius: 10, backgroundColor: autoBackupInterval === id ? theme.accentLight : 'transparent', marginBottom: 4 }} onPress={() => changeInterval(id as BackupInterval)}>
+                  <View style={{ width: 22, height: 22, borderRadius: 11, borderWidth: 2, borderColor: autoBackupInterval === id ? theme.primary : theme.border, justifyContent: 'center', alignItems: 'center', marginRight: 12 }}>
+                    {autoBackupInterval === id && <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: theme.primary }} />}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 15, fontWeight: '500', color: theme.text }}>{label}</Text>
+                    {sub ? <Text style={{ fontSize: 12, color: theme.textMuted }}>{sub}</Text> : null}
+                  </View>
+                </TouchableOpacity>
+              ))}
+              {autoBackupInterval === 'custom' && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8, paddingHorizontal: 14 }}>
+                  <Text style={{ fontSize: 14, color: theme.textSec }}>Каждые</Text>
+                  <TextInput
+                    style={{ width: 60, padding: 10, borderRadius: 8, borderWidth: 1, borderColor: theme.border, fontSize: 16, fontWeight: '600', color: theme.text, textAlign: 'center', backgroundColor: theme.bg }}
+                    keyboardType="number-pad"
+                    value={autoBackupCustomDays}
+                    onChangeText={t => { const n = t.replace(/[^0-9]/g, ''); setAutoBackupCustomDays(n); }}
+                    onEndEditing={() => saveCustomDays(autoBackupCustomDays || '1')}
+                    maxLength={3}
+                  />
+                  <Text style={{ fontSize: 14, color: theme.textSec }}>дн.</Text>
+                </View>
+              )}
+              <TouchableOpacity style={[s.saveBtn, { backgroundColor: theme.primary, marginTop: 12 }]} onPress={() => setShowIntervalPicker(false)}>
+                <Text style={[s.saveBtnTxt, { color: theme.textOn }]}>Готово</Text>
+              </TouchableOpacity>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+      )}
+      {showBackupHistory && (
+        <Modal visible transparent animationType="slide" onRequestClose={() => setShowBackupHistory(false)}>
+          <View style={s.sheetOverlay}>
+            <TouchableOpacity style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} activeOpacity={1} onPress={() => setShowBackupHistory(false)} />
+            <View style={[s.sheet, { backgroundColor: theme.bg }]}>
+              <View style={[s.sheetHdr, { borderBottomColor: theme.border }]}>
+                <Text style={[s.sheetTitle, { color: theme.text }]}>История копий</Text>
+                <TouchableOpacity onPress={() => setShowBackupHistory(false)}><Ionicons name="close" size={24} color={theme.text} /></TouchableOpacity>
+              </View>
+              <ScrollView style={s.sheetList} nestedScrollEnabled>
+                {backupFiles.length === 0 && <Text style={{ padding: 20, textAlign: 'center', color: theme.textMuted, fontStyle: 'italic' }}>Нет сохранённых копий</Text>}
+                {backupFiles.map((f, i) => (
+                  <View key={f.name} style={[s.sheetItem, { borderBottomColor: theme.borderLight, flexDirection: 'column', alignItems: 'stretch', gap: 8 }]}>
+                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 14, fontWeight: '500', color: theme.text }}>{f.date ? new Date(f.date).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : f.name}</Text>
+                        <Text style={{ fontSize: 12, color: theme.textMuted }}>{f.date ? new Date(f.date).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : ''} {f.sizeKB > 0 ? `• ${f.sizeKB} КБ` : ''}</Text>
+                      </View>
+                      {i === 0 && <View style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, backgroundColor: theme.accentLight }}><Text style={{ fontSize: 11, fontWeight: '600', color: theme.primary }}>Последняя</Text></View>}
+                    </View>
+                    <View style={{ flexDirection: 'row', gap: 8 }}>
+                      <TouchableOpacity style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, borderRadius: 8, backgroundColor: theme.surfaceAlt }} onPress={() => restoreFromBackup(f)}>
+                        <Ionicons name="refresh" size={16} color={theme.primary} />
+                        <Text style={{ fontSize: 13, fontWeight: '500', color: theme.primary }}>Восстановить</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 8, backgroundColor: theme.surfaceAlt }} onPress={() => deleteBackupFile(f)}>
+                        <Ionicons name="trash" size={16} color={theme.error} />
+                      </TouchableOpacity>
+                    </View>
+                  </View>
                 ))}
               </ScrollView>
             </View>
