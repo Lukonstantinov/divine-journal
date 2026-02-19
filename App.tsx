@@ -625,7 +625,7 @@ const DailyReadingModal = ({ visible, reading, isRead, onClose, onMarkRead, onSa
           <Text style={[s.modalTitle, { color: theme.text }]}>Ежедневное чтение</Text>
           <View style={{ width: 24 }} />
         </View>
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 40 }}>
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 40 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
           {/* Section 1: Verse of the Day */}
           <View style={s.drSection}>
             <Text style={[s.drSectionHdr, { color: theme.text }]}>✨ Стих дня</Text>
@@ -668,17 +668,19 @@ const DailyReadingModal = ({ visible, reading, isRead, onClose, onMarkRead, onSa
               <Text style={[s.drEmptyTxt, { color: theme.textMuted }]}>Псалмы не найдены</Text>
             ) : reading.psalms.map((psalm, idx) => (
               <View key={idx} style={[s.drPsalmCard, { backgroundColor: theme.surface }]}>
-                <TouchableOpacity style={s.drPsalmHdr} onPress={() => togglePsalm(idx)}>
-                  <Ionicons name={expandedPsalms.has(idx) ? 'chevron-down' : 'chevron-forward'} size={20} color={theme.primary} />
-                  <Text style={{ flex: 1, fontSize: 15, fontWeight: '600', color: theme.text }}>{psalm.title}</Text>
-                  <Text style={{ fontSize: 12, color: theme.textMuted }}>{psalm.verses.length} ст.</Text>
-                  <TouchableOpacity style={{ marginLeft: 8 }} onPress={() => {
+                <View style={s.drPsalmHdr}>
+                  <TouchableOpacity style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 8 }} onPress={() => togglePsalm(idx)}>
+                    <Ionicons name={expandedPsalms.has(idx) ? 'chevron-down' : 'chevron-forward'} size={20} color={theme.primary} />
+                    <Text style={{ flex: 1, fontSize: 15, fontWeight: '600', color: theme.text }}>{psalm.title}</Text>
+                    <Text style={{ fontSize: 12, color: theme.textMuted }}>{psalm.verses.length} ст.</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={{ marginLeft: 8, padding: 4 }} onPress={() => {
                     const fullText = psalm.verses.map(v => `${v.number}. ${v.text}`).join('\n');
                     onSaveToJournal(psalm.title, fullText, psalm.title);
                   }}>
                     <Text style={{ fontSize: 13, color: theme.primary }}>💾</Text>
                   </TouchableOpacity>
-                </TouchableOpacity>
+                </View>
                 {expandedPsalms.has(idx) && (
                   <View style={s.drPsalmBody}>
                     {psalm.verses.map(v => (
@@ -1108,7 +1110,7 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
         streak={readingStreak}
         onOpenReading={() => setShowDailyReadingModal(true)}
       />
-      <FlatList data={filteredEntries} keyExtractor={i => i.id.toString()} renderItem={({ item }) => {
+      <FlatList style={{ flex: 1 }} data={filteredEntries} keyExtractor={i => i.id.toString()} renderItem={({ item }) => {
         const cs = catStyle(item.category), vc = vCount(item.content), pv = preview(item.content);
         const isFasting = isFastingEntry(item);
         return (
@@ -1582,7 +1584,7 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
           );
         })}
       </View>
-      <ScrollView style={s.dayDetails}>
+      <ScrollView style={s.dayDetails} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
         <Text style={[s.dayTitle, { color: theme.text }]}>{fmtDateRu(selDate)}</Text>
         <View style={[s.daySec, { backgroundColor: theme.surface }]}>
           <View style={s.daySecHdr}>
@@ -2341,7 +2343,7 @@ const SettingsScreen = () => {
   const exportData = async () => {
     try {
       const data = {
-        version: '4.1',
+        version: '4.2',
         exportDate: new Date().toISOString(),
         entries: await db.getAllAsync('SELECT * FROM entries'),
         bookmarks: await db.getAllAsync('SELECT * FROM bookmarks'),
@@ -2654,7 +2656,7 @@ const SettingsScreen = () => {
           </TouchableOpacity>
         </View>
 
-        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 4.1</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 4.2</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
       </ScrollView>
       {showGraph && <GraphView entries={allEntries} folders={allFolders} onClose={() => setShowGraph(false)} />}
       {showTimePicker && (
@@ -2684,13 +2686,14 @@ const SettingsScreen = () => {
       )}
       {showBookPicker && (
         <Modal visible transparent animationType="fade" onRequestClose={() => setShowBookPicker(false)}>
-          <TouchableOpacity style={s.sheetOverlay} activeOpacity={1} onPress={() => setShowBookPicker(false)}>
+          <View style={s.sheetOverlay}>
+            <TouchableOpacity style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} activeOpacity={1} onPress={() => setShowBookPicker(false)} />
             <View style={[s.sheet, { backgroundColor: theme.bg }]}>
               <View style={[s.sheetHdr, { borderBottomColor: theme.border }]}>
                 <Text style={[s.sheetTitle, { color: theme.text }]}>Выберите книгу</Text>
                 <TouchableOpacity onPress={() => setShowBookPicker(false)}><Ionicons name="close" size={24} color={theme.text} /></TouchableOpacity>
               </View>
-              <ScrollView style={s.sheetList}>
+              <ScrollView style={s.sheetList} nestedScrollEnabled keyboardShouldPersistTaps="handled">
                 {BIBLE_BOOKS.map(b => (
                   <TouchableOpacity key={b.name} style={[s.sheetItem, { borderBottomColor: theme.borderLight }]} onPress={() => { setCustomPatternBook(b.name); setShowBookPicker(false); }}>
                     <Text style={[s.sheetItemTxt, { color: theme.text }]}>{b.name}</Text>
@@ -2699,7 +2702,7 @@ const SettingsScreen = () => {
                 ))}
               </ScrollView>
             </View>
-          </TouchableOpacity>
+          </View>
         </Modal>
       )}
     </View>
