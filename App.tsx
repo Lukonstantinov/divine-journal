@@ -188,7 +188,7 @@ const getBackupDir = (): Directory => {
 };
 
 const collectBackupData = async () => ({
-  version: '4.4',
+  version: '4.5',
   exportDate: new Date().toISOString(),
   entries: await db.getAllAsync('SELECT * FROM entries'),
   bookmarks: await db.getAllAsync('SELECT * FROM bookmarks'),
@@ -717,13 +717,15 @@ const DailyReadingModal = ({ visible, reading, isRead, onClose, onMarkRead, onSa
 
   return (
     <Modal visible={visible} animationType="slide" statusBarTranslucent>
-      <SafeAreaProvider><SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]}>
+      {/* SafeAreaProvider inside Modal is unsupported on Android — it can't measure window height,
+          giving ScrollView an unbounded height so it can never scroll. Use plain View instead. */}
+      <View style={{ flex: 1, backgroundColor: theme.bg, paddingTop: StatusBar.currentHeight || 0 }}>
         <View style={[s.modalHdr, { borderBottomColor: theme.border }]}>
           <TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color={theme.text} /></TouchableOpacity>
           <Text style={[s.modalTitle, { color: theme.text }]}>Ежедневное чтение</Text>
           <View style={{ width: 24 }} />
         </View>
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 40 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
           {/* Section 1: Verse of the Day */}
           <View style={s.drSection}>
             <Text style={[s.drSectionHdr, { color: theme.text }]}>✨ Стих дня</Text>
@@ -827,7 +829,7 @@ const DailyReadingModal = ({ visible, reading, isRead, onClose, onMarkRead, onSa
             </TouchableOpacity>
           )}
         </ScrollView>
-      </SafeAreaView></SafeAreaProvider>
+      </View>
     </Modal>
   );
 };
@@ -1670,7 +1672,9 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
         <TouchableOpacity onPress={nextM}><Ionicons name="chevron-forward" size={24} color={theme.primary} /></TouchableOpacity>
       </View>
       <View style={s.wdayRow}>{WDAYS.map(d => <Text key={d} style={s.wdayTxt}>{d}</Text>)}</View>
-      <View style={s.calGrid}>
+      {/* Explicit height: always 42 cells = 6 rows × 7 cols. Without this, flexWrap:'wrap'
+          reports incorrect height to Yoga, causing dayDetails ScrollView to get a wrong size. */}
+      <View style={[s.calGrid, { height: ((SW - 16) / 7) * 6 }]}>
         {days.map((d, i) => {
           const ds = fmtDate(d), isCur = d.getMonth() === month, isT = ds === todayStr, isS = ds === selDate;
           const { hasE, hasR, compR, totR, hasF } = dayInfo(d);
@@ -2931,7 +2935,7 @@ const SettingsScreen = () => {
           </TouchableOpacity>
         </View>
 
-        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 4.4</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 4.5</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
       </ScrollView>
       {showGraph && <GraphView entries={allEntries} folders={allFolders} onClose={() => setShowGraph(false)} />}
       {showTimePicker && (
