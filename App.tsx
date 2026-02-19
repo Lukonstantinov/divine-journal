@@ -188,7 +188,7 @@ const getBackupDir = (): Directory => {
 };
 
 const collectBackupData = async () => ({
-  version: '4.8',
+  version: '4.9',
   exportDate: new Date().toISOString(),
   entries: await db.getAllAsync('SELECT * FROM entries'),
   bookmarks: await db.getAllAsync('SELECT * FROM bookmarks'),
@@ -1229,16 +1229,14 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
         );
       }} contentContainerStyle={s.list} refreshing={refreshing} onRefresh={onRefresh} ListEmptyComponent={<View style={s.empty}><Ionicons name="journal-outline" size={64} color={theme.border} /><Text style={[s.emptyTxt, { color: theme.textMuted }]}>{searchQ ? 'Ничего не найдено' : 'Записей пока нет'}</Text>{!searchQ && <Text style={{ color: theme.textSec, fontSize: 14, textAlign: 'center', marginTop: 8, paddingHorizontal: 40, lineHeight: 20 }}>Нажмите «+» чтобы создать первую запись. Ведите дневник снов, откровений, мыслей и молитв.</Text>}</View>} />
 
-      {showDailyReadingModal && dailyReadingResult && (
-        <DailyReadingModal
-          visible={showDailyReadingModal}
-          reading={dailyReadingResult}
-          isRead={dailyIsRead}
-          onClose={() => setShowDailyReadingModal(false)}
-          onMarkRead={handleMarkRead}
-          onSaveToJournal={saveVerseToJournal}
-        />
-      )}
+      <DailyReadingModal
+        visible={showDailyReadingModal && !!dailyReadingResult}
+        reading={dailyReadingResult}
+        isRead={dailyIsRead}
+        onClose={() => setShowDailyReadingModal(false)}
+        onMarkRead={handleMarkRead}
+        onSaveToJournal={saveVerseToJournal}
+      />
 
       <Modal visible={viewing !== null} animationType="slide" statusBarTranslucent>
         <SafeAreaProvider><SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]}>
@@ -2935,7 +2933,7 @@ const SettingsScreen = () => {
           </TouchableOpacity>
         </View>
 
-        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 4.8</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 4.9</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
       </ScrollView>
       {showGraph && <GraphView entries={allEntries} folders={allFolders} onClose={() => setShowGraph(false)} />}
       {showTimePicker && (
