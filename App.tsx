@@ -188,7 +188,7 @@ const getBackupDir = (): Directory => {
 };
 
 const collectBackupData = async () => ({
-  version: '4.5',
+  version: '4.6',
   exportDate: new Date().toISOString(),
   entries: await db.getAllAsync('SELECT * FROM entries'),
   bookmarks: await db.getAllAsync('SELECT * FROM bookmarks'),
@@ -697,6 +697,10 @@ const DailyReadingModal = ({ visible, reading, isRead, onClose, onMarkRead, onSa
   onClose: () => void; onMarkRead: () => void; onSaveToJournal: (title: string, text: string, verseRef: string) => void;
 }) => {
   const { theme } = useTheme();
+  // useSafeAreaInsets reads from the ROOT SafeAreaProvider (works in modals, unlike SafeAreaView).
+  // We need BOTH top (status bar) and bottom (nav bar) — without bottom padding the ScrollView
+  // extends behind the nav bar, measures itself as larger than the content, and never scrolls.
+  const insets = useSafeAreaInsets();
   const [expandedPsalms, setExpandedPsalms] = useState<Set<number>>(new Set([0]));
 
   if (!reading) return null;
@@ -717,9 +721,11 @@ const DailyReadingModal = ({ visible, reading, isRead, onClose, onMarkRead, onSa
 
   return (
     <Modal visible={visible} animationType="slide" statusBarTranslucent>
-      {/* SafeAreaProvider inside Modal is unsupported on Android — it can't measure window height,
-          giving ScrollView an unbounded height so it can never scroll. Use plain View instead. */}
-      <View style={{ flex: 1, backgroundColor: theme.bg, paddingTop: StatusBar.currentHeight || 0 }}>
+      {/* SafeAreaProvider inside Modal is unsupported on Android and gives wrong measurements.
+          Use plain View with insets from the root provider: top (status bar) + bottom (nav bar).
+          Without paddingBottom the ScrollView extends behind the nav bar, measures as larger
+          than the content, and never scrolls. */}
+      <View style={{ flex: 1, backgroundColor: theme.bg, paddingTop: insets.top, paddingBottom: insets.bottom }}>
         <View style={[s.modalHdr, { borderBottomColor: theme.border }]}>
           <TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color={theme.text} /></TouchableOpacity>
           <Text style={[s.modalTitle, { color: theme.text }]}>Ежедневное чтение</Text>
@@ -2935,7 +2941,7 @@ const SettingsScreen = () => {
           </TouchableOpacity>
         </View>
 
-        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 4.5</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 4.6</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
       </ScrollView>
       {showGraph && <GraphView entries={allEntries} folders={allFolders} onClose={() => setShowGraph(false)} />}
       {showTimePicker && (
