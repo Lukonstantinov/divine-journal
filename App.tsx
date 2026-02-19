@@ -188,7 +188,7 @@ const getBackupDir = (): Directory => {
 };
 
 const collectBackupData = async () => ({
-  version: '4.9',
+  version: '5.0',
   exportDate: new Date().toISOString(),
   entries: await db.getAllAsync('SELECT * FROM entries'),
   bookmarks: await db.getAllAsync('SELECT * FROM bookmarks'),
@@ -698,6 +698,8 @@ const DailyReadingModal = ({ visible, reading, isRead, onClose, onMarkRead, onSa
 }) => {
   const { theme } = useTheme();
   const [expandedPsalms, setExpandedPsalms] = useState<Set<number>>(new Set([0]));
+  const [containerH, setContainerH] = useState(Dimensions.get('window').height);
+  const [headerH, setHeaderH] = useState(57);
 
   if (!reading) return null;
 
@@ -714,17 +716,18 @@ const DailyReadingModal = ({ visible, reading, isRead, onClose, onMarkRead, onSa
   };
 
   const day = new Date().getDate();
+  const scrollH = containerH - headerH;
 
   return (
     <Modal visible={visible} animationType="slide" statusBarTranslucent>
       <SafeAreaProvider>
-      <SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]}>
-        <View style={[s.modalHdr, { borderBottomColor: theme.border }]}>
+      <SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]} onLayout={e => setContainerH(e.nativeEvent.layout.height)}>
+        <View style={[s.modalHdr, { borderBottomColor: theme.border }]} onLayout={e => setHeaderH(e.nativeEvent.layout.height)}>
           <TouchableOpacity onPress={onClose}><Ionicons name="close" size={24} color={theme.text} /></TouchableOpacity>
           <Text style={[s.modalTitle, { color: theme.text }]}>Ежедневное чтение</Text>
           <View style={{ width: 24 }} />
         </View>
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 40 }} keyboardShouldPersistTaps="handled" scrollEnabled showsVerticalScrollIndicator overScrollMode="always">
+        <ScrollView style={{ height: scrollH }} contentContainerStyle={{ padding: 16, paddingBottom: 40 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator overScrollMode="always">
           {/* Section 1: Verse of the Day */}
           <View style={s.drSection}>
             <Text style={[s.drSectionHdr, { color: theme.text }]}>✨ Стих дня</Text>
@@ -2933,7 +2936,7 @@ const SettingsScreen = () => {
           </TouchableOpacity>
         </View>
 
-        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 4.9</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 5.0</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
       </ScrollView>
       {showGraph && <GraphView entries={allEntries} folders={allFolders} onClose={() => setShowGraph(false)} />}
       {showTimePicker && (
