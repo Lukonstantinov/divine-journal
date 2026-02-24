@@ -131,7 +131,7 @@ app_settings     (key TEXT PK, value TEXT)
 - Graph view: Force-directed layout (60 iterations) computed in JS, rendered with react-native-svg
 
 ### Version Management
-- **Current version: v3.6**
+- **Current version: v5.2**
 - **IMPORTANT**: On every code change that will be built into an APK, bump the version number (patch increment: 3.3 → 3.4 → 3.5 etc.)
 - Update version in **3 places**: `App.tsx` export `version` field, `App.tsx` "Версия X.X" display string, and `app.json` `"version"` field
 - This ensures the user can always verify they have the latest build installed
@@ -169,7 +169,13 @@ See `ENHANCEMENT_PLAN.md` for the full roadmap with code-level implementation de
 - **Phase 6**: Advanced editing (highlights, dividers, block reorder, rich daily notes)
 - **Phase 7**: Graph view for entry connections
 - **A1**: Export/import data
+- **Phase 8**: Daily reading system (verse of the day, Psalms, Proverbs, custom plans)
+- **Phase 9**: Backdated notes (custom date picker for entries)
 
-### Remaining
+### Planned
+- **Feature 2**: "On This Day" — past years memories slider
+- **Feature 6**: Journal full-text search with filters
+- **Feature 9**: Entry pinning & favorites
+- **Feature 10**: Home screen widget (daily verse)
 - **A2**: Voice-to-text (keyboard built-in may suffice)
 - **A4**: Cloud backup
