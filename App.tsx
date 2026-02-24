@@ -850,6 +850,11 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
   const [vpick, setVpick] = useState(false);
   const [insertId, setInsertId] = useState<string | null>(null);
   const [viewing, setViewing] = useState<Entry | null>(null);
+  // Entry date state (for backdated entries)
+  const [entryDate, setEntryDate] = useState(fmtDate(new Date()));
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [pickerMonth, setPickerMonth] = useState(new Date().getMonth());
+  const [pickerYear, setPickerYear] = useState(new Date().getFullYear());
   const [colorPick, setColorPick] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [tStyle, setTStyle] = useState<TStyle>({});
@@ -1016,8 +1021,10 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
     try {
       const cJson = JSON.stringify(blocks);
       const linked = blocks.filter(b => b.type === 'verse').map(b => { try { const d = JSON.parse(b.content); return { book: d.book, chapter: d.chapter, verse: d.verse }; } catch { return null; } }).filter(Boolean);
-      if (editing) await db.runAsync('UPDATE entries SET title=?, content=?, category=?, linked_verses=?, folder_id=? WHERE id=?', [title, cJson, cat, JSON.stringify(linked), entryFolder, editing.id]);
-      else await db.runAsync('INSERT INTO entries (title, content, category, linked_verses, folder_id) VALUES (?,?,?,?,?)', [title, cJson, cat, JSON.stringify(linked), entryFolder]);
+      const timePart = editing ? (editing.created_at.includes('T') ? editing.created_at.split('T')[1] : editing.created_at.split(' ').slice(1).join(' ')) || '12:00:00' : new Date().toTimeString().slice(0, 8);
+      const timestamp = entryDate + ' ' + timePart;
+      if (editing) await db.runAsync('UPDATE entries SET title=?, content=?, category=?, linked_verses=?, folder_id=?, created_at=? WHERE id=?', [title, cJson, cat, JSON.stringify(linked), entryFolder, timestamp, editing.id]);
+      else await db.runAsync('INSERT INTO entries (title, content, category, linked_verses, folder_id, created_at) VALUES (?,?,?,?,?,?)', [title, cJson, cat, JSON.stringify(linked), entryFolder, timestamp]);
       reset(); load();
     } catch (e: any) { Alert.alert('Ошибка сохранения', e?.message || 'Не удалось сохранить'); }
   };
@@ -1025,12 +1032,21 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
   const del = (id: number) => Alert.alert('Удалить?', '', [{ text: 'Отмена', style: 'cancel' }, { text: 'Удалить', style: 'destructive', onPress: async () => { await db.runAsync('DELETE FROM entries WHERE id=?', [id]); load(); setViewing(null); }}]);
 
   const openEdit = (e?: Entry) => {
-    if (e) { setEditing(e); setTitle(e.title); setBlocks(parseBlocks(e.content)); setCat(e.category); setEntryFolder(e.folder_id); }
-    else { reset(); setBlocks([{ id: genId(), type: 'text', content: '' }]); setEntryFolder(activeFolder); }
-    setViewing(null); setModal(true);
+    if (e) {
+      setEditing(e); setTitle(e.title); setBlocks(parseBlocks(e.content)); setCat(e.category); setEntryFolder(e.folder_id);
+      const dateStr = e.created_at.split('T')[0].split(' ')[0];
+      setEntryDate(dateStr);
+      const d = new Date(dateStr + 'T12:00:00');
+      setPickerMonth(d.getMonth()); setPickerYear(d.getFullYear());
+    } else {
+      reset(); setBlocks([{ id: genId(), type: 'text', content: '' }]); setEntryFolder(activeFolder);
+      const now = new Date();
+      setEntryDate(fmtDate(now)); setPickerMonth(now.getMonth()); setPickerYear(now.getFullYear());
+    }
+    setShowDatePicker(false); setViewing(null); setModal(true);
   };
 
-  const reset = () => { setEditing(null); setTitle(''); setBlocks([{ id: genId(), type: 'text', content: '' }]); setCat('мысль'); setModal(false); setActiveId(null); setTStyle({}); setEntryFolder(null); setDirty(false); };
+  const reset = () => { setEditing(null); setTitle(''); setBlocks([{ id: genId(), type: 'text', content: '' }]); setCat('мысль'); setModal(false); setActiveId(null); setTStyle({}); setEntryFolder(null); setDirty(false); const now = new Date(); setEntryDate(fmtDate(now)); setShowDatePicker(false); setPickerMonth(now.getMonth()); setPickerYear(now.getFullYear()); };
 
   const confirmClose = () => {
     if (dirty) {
@@ -1273,6 +1289,25 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
                 </TouchableOpacity>
               ))}
             </ScrollView></>}
+            <Text style={[s.label, { color: theme.textSec }]}>Дата</Text>
+            <TouchableOpacity style={[s.input, { backgroundColor: theme.surface, borderColor: theme.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 12 }]} onPress={() => { setShowDatePicker(!showDatePicker); Keyboard.dismiss(); }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Ionicons name="calendar-outline" size={18} color={theme.primary} />
+                <Text style={{ color: theme.text, fontSize: 15 }}>{new Date(entryDate + 'T12:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric', weekday: 'short' })}</Text>
+                {entryDate !== fmtDate(new Date()) && <View style={{ backgroundColor: theme.accent + '30', borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}><Text style={{ fontSize: 11, color: theme.primary }}>изменено</Text></View>}
+              </View>
+              <Ionicons name={showDatePicker ? 'chevron-up' : 'chevron-down'} size={18} color={theme.textMuted} />
+            </TouchableOpacity>
+            {showDatePicker && <View style={{ backgroundColor: theme.surfaceAlt, borderRadius: 12, padding: 12, marginTop: 4 }}>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <TouchableOpacity onPress={() => { if (pickerMonth === 0) { setPickerMonth(11); setPickerYear(y => y - 1); } else setPickerMonth(m => m - 1); }}><Ionicons name="chevron-back" size={22} color={theme.primary} /></TouchableOpacity>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: theme.text }}>{MONTHS[pickerMonth]} {pickerYear}</Text>
+                <TouchableOpacity onPress={() => { if (pickerMonth === 11) { setPickerMonth(0); setPickerYear(y => y + 1); } else setPickerMonth(m => m + 1); }}><Ionicons name="chevron-forward" size={22} color={theme.primary} /></TouchableOpacity>
+              </View>
+              <View style={{ flexDirection: 'row', marginBottom: 4 }}>{WDAYS.map(w => <Text key={w} style={{ flex: 1, textAlign: 'center', fontSize: 12, color: theme.textMuted, fontWeight: '600' }}>{w}</Text>)}</View>
+              {(() => { const days = getMonthDays(pickerYear, pickerMonth); const rows = []; for (let r = 0; r < 6; r++) { rows.push(<View key={r} style={{ flexDirection: 'row' }}>{days.slice(r * 7, r * 7 + 7).map((d, i) => { const ds = fmtDate(d); const isCurMonth = d.getMonth() === pickerMonth; const isSel = ds === entryDate; const isToday = ds === fmtDate(new Date()); return <TouchableOpacity key={i} style={{ flex: 1, aspectRatio: 1, justifyContent: 'center', alignItems: 'center', borderRadius: 20, backgroundColor: isSel ? theme.primary : 'transparent' }} onPress={() => { setEntryDate(ds); setDirty(true); setShowDatePicker(false); }}><Text style={{ fontSize: 14, color: isSel ? theme.textOn : isCurMonth ? theme.text : theme.textMuted, fontWeight: isToday ? '700' : '400' }}>{d.getDate()}</Text></TouchableOpacity>; })}</View>); } return rows; })()}
+              <TouchableOpacity style={{ alignSelf: 'center', marginTop: 8, paddingVertical: 6, paddingHorizontal: 16, backgroundColor: theme.primary + '15', borderRadius: 8 }} onPress={() => { const now = new Date(); setEntryDate(fmtDate(now)); setPickerMonth(now.getMonth()); setPickerYear(now.getFullYear()); setShowDatePicker(false); }}><Text style={{ color: theme.primary, fontSize: 13, fontWeight: '600' }}>Сегодня</Text></TouchableOpacity>
+            </View>}
             <Text style={[s.label, { color: theme.textSec }]}>Заголовок</Text>
             <TextInput style={[s.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]} value={title} onChangeText={t => { setTitle(t); setDirty(true); }} placeholder="Название..." placeholderTextColor={theme.textMuted} />
             <Text style={s.label}>Содержание</Text>
@@ -2939,7 +2974,7 @@ const SettingsScreen = () => {
           </TouchableOpacity>
         </View>
 
-        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 5.1</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 5.2</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
       </ScrollView>
       {showGraph && <GraphView entries={allEntries} folders={allFolders} onClose={() => setShowGraph(false)} />}
       {showTimePicker && (
