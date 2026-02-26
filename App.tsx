@@ -192,7 +192,7 @@ const getBackupDir = (): Directory => {
 };
 
 const collectBackupData = async () => ({
-  version: '5.4',
+  version: '5.5',
   exportDate: new Date().toISOString(),
   entries: await db.getAllAsync('SELECT * FROM entries'),
   bookmarks: await db.getAllAsync('SELECT * FROM bookmarks'),
@@ -425,6 +425,7 @@ const AppContent = () => {
   const [tab, setTab] = useState<Tab>('journal');
   const [ready, setReady] = useState(false);
   const [navTarget, setNavTarget] = useState<NavTarget | null>(null);
+  const [pendingEntry, setPendingEntry] = useState<{ id: number; edit: boolean } | null>(null);
 
   useEffect(() => { initDb().then(() => { setReady(true); tryAutoBackup(); }); }, []);
 
@@ -432,6 +433,8 @@ const AppContent = () => {
     setNavTarget({ book, chapter });
     setTab('bible');
   };
+
+  const navigateToEntry = (id: number, edit = false) => { setPendingEntry({ id, edit }); setTab('journal'); };
 
   const clearNavTarget = () => setNavTarget(null);
 
@@ -446,8 +449,8 @@ const AppContent = () => {
   return (
     <>
       <StatusBar barStyle={theme.statusBar} backgroundColor={theme.bg} />
-      {tab === 'journal' && <JournalScreen onNavigate={navigateToBible} />}
-      {tab === 'bible' && <BibleScreen navTarget={navTarget} clearNavTarget={clearNavTarget} />}
+      {tab === 'journal' && <JournalScreen onNavigate={navigateToBible} openEntry={pendingEntry} onOpenEntryHandled={() => setPendingEntry(null)} />}
+      {tab === 'bible' && <BibleScreen navTarget={navTarget} clearNavTarget={clearNavTarget} onOpenEntry={navigateToEntry} />}
       {tab === 'calendar' && <CalendarScreen onNavigate={navigateToBible} />}
       {tab === 'search' && <SearchScreen onNavigate={navigateToBible} />}
       {tab === 'settings' && <SettingsScreen />}
@@ -842,7 +845,7 @@ const DailyReadingModal = ({ visible, reading, isRead, onClose, onMarkRead, onSa
 };
 
 // Journal Screen
-const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: number) => void }) => {
+const JournalScreen = ({ onNavigate, openEntry, onOpenEntryHandled }: { onNavigate: (book: string, chapter: number) => void; openEntry: { id: number; edit: boolean } | null; onOpenEntryHandled: () => void }) => {
   const { theme, bibleFont, fontScale } = useTheme();
   const bibleFontFamily = getVFont(bibleFont).family;
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -900,6 +903,8 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
   const [searchQ, setSearchQ] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const [dirty, setDirty] = useState(false);
+  // Viewer card style
+  const [viewerCardColor, setViewerCardColor] = useState<string | null>(null);
 
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
@@ -943,6 +948,15 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
       setReadingStreak(streak);
     });
   }, []);
+
+  useEffect(() => { (async () => { const vc = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='viewer_card_color'"); setViewerCardColor(vc?.value || null); })(); }, []);
+
+  useEffect(() => {
+    if (openEntry && entries.length > 0) {
+      const e = entries.find(x => x.id === openEntry.id);
+      if (e) { if (openEntry.edit) openEdit(e); else setViewing(e); onOpenEntryHandled(); }
+    }
+  }, [openEntry, entries]);
 
   const load = useCallback(async () => {
     const allEntr = await db.getAllAsync<Entry>('SELECT * FROM entries ORDER BY created_at DESC');
@@ -1322,10 +1336,12 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
       <Modal visible={viewing !== null} animationType="slide" statusBarTranslucent>
         <SafeAreaProvider><SafeAreaView style={[s.modal, { backgroundColor: theme.bg }]} onLayout={e => setViewContainerH(e.nativeEvent.layout.height)}>
           <View style={[s.modalHdr, { borderBottomColor: theme.border }]} onLayout={e => setViewHeaderH(e.nativeEvent.layout.height)}><TouchableOpacity onPress={() => setViewing(null)}><Ionicons name="close" size={24} color={theme.text} /></TouchableOpacity><Text style={[s.modalTitle, { color: theme.text }]} numberOfLines={1}>{viewing?.title}</Text><TouchableOpacity onPress={() => viewing && openEdit(viewing)}><Ionicons name="create-outline" size={24} color={theme.primary} /></TouchableOpacity></View>
-          {viewing && <ScrollView style={{ height: viewContainerH - viewHeaderH }} contentContainerStyle={{ padding: 20, paddingBottom: 60 }}>
-            <View style={s.viewMeta}><View style={[s.badge, { backgroundColor: catStyle(viewing.category).bg }]}><Ionicons name={catIcon(viewing.category)} size={14} color={catStyle(viewing.category).color} /><Text style={[s.badgeTxt, { color: catStyle(viewing.category).color }]}>{viewing.category}</Text></View><Text style={s.viewDate}>{new Date(viewing.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text></View>
-            {parseBlocks(viewing.content).map(b => <View key={b.id}>{b.type === 'divider' ? <View style={{ height: 1, backgroundColor: theme.border, marginVertical: 12 }} /> : b.type === 'text' ? renderText(b) : renderVerse(b)}</View>)}
-            <TouchableOpacity style={[s.delBtn, { marginTop: 20 }]} onPress={() => viewing && del(viewing.id)}><Ionicons name="trash-outline" size={20} color={C.error} /><Text style={s.delTxt}>Удалить</Text></TouchableOpacity>
+          {viewing && <ScrollView style={{ height: viewContainerH - viewHeaderH }} contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
+            <View style={viewerCardColor ? { backgroundColor: viewerCardColor, borderRadius: 18, padding: 16, marginBottom: 4, shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 10, elevation: 2 } : { paddingHorizontal: 4 }}>
+              <View style={s.viewMeta}><View style={[s.badge, { backgroundColor: catStyle(viewing.category).bg }]}><Ionicons name={catIcon(viewing.category)} size={14} color={catStyle(viewing.category).color} /><Text style={[s.badgeTxt, { color: catStyle(viewing.category).color }]}>{viewing.category}</Text></View><Text style={s.viewDate}>{new Date(viewing.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text></View>
+              {parseBlocks(viewing.content).map(b => <View key={b.id}>{b.type === 'divider' ? <View style={{ height: 1, backgroundColor: theme.border, marginVertical: 12 }} /> : b.type === 'text' ? renderText(b) : renderVerse(b)}</View>)}
+            </View>
+            <TouchableOpacity style={[s.delBtn, { marginTop: 16 }]} onPress={() => viewing && del(viewing.id)}><Ionicons name="trash-outline" size={20} color={C.error} /><Text style={s.delTxt}>Удалить</Text></TouchableOpacity>
           </ScrollView>}
         </SafeAreaView></SafeAreaProvider>
       </Modal>
@@ -1521,8 +1537,11 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
   const [editingFastName, setEditingFastName] = useState(false);
   const [fastName, setFastName] = useState('');
   const [viewingEntry, setViewingEntry] = useState<Entry | null>(null);
+  const [viewerCardColor, setViewerCardColor] = useState<string | null>(null);
 
   const days = useMemo(() => getMonthDays(year, month), [year, month]);
+  useEffect(() => { (async () => { const vc = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='viewer_card_color'"); setViewerCardColor(vc?.value || null); })(); }, []);
+
   const load = useCallback(async () => {
     const es = await db.getAllAsync<Entry>('SELECT * FROM entries ORDER BY created_at DESC');
     const g: Record<string, Entry[]> = {};
@@ -2124,7 +2143,8 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
               <Text style={[s.modalTitle, { color: theme.text }]} numberOfLines={1}>{viewingEntry.title}</Text>
               <View style={{ width: 24 }} />
             </View>
-            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingBottom: 60 }}>
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
+              <View style={viewerCardColor ? { backgroundColor: viewerCardColor, borderRadius: 18, padding: 16, marginBottom: 4, shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 10, elevation: 2 } : { paddingHorizontal: 4 }}>
               <View style={s.viewMeta}><View style={[s.badge, { backgroundColor: catStyle(viewingEntry.category).bg }]}><Ionicons name={catIcon(viewingEntry.category) as any} size={14} color={catStyle(viewingEntry.category).color} /><Text style={[s.badgeTxt, { color: catStyle(viewingEntry.category).color }]}>{viewingEntry.category}</Text></View><Text style={[s.viewDate, { color: theme.textMuted }]}>{new Date(viewingEntry.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text></View>
               {parseBlocks(viewingEntry.content).map(b => {
                 if (b.type === 'divider') return <View key={b.id} style={{ height: 1, backgroundColor: theme.border, marginVertical: 12 }} />;
@@ -2135,6 +2155,7 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
                 if (b.textStyle?.highlight) { const hl = TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight); if (hl) st.backgroundColor = hl.bg; }
                 return <Text key={b.id} style={st}>{b.content}</Text>;
               })}
+              </View>
             </ScrollView>
           </SafeAreaView></SafeAreaProvider>
         </Modal>
@@ -2144,7 +2165,7 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
 };
 
 // Bible Screen
-const BibleScreen = ({ navTarget, clearNavTarget }: { navTarget: NavTarget | null; clearNavTarget: () => void }) => {
+const BibleScreen = ({ navTarget, clearNavTarget, onOpenEntry }: { navTarget: NavTarget | null; clearNavTarget: () => void; onOpenEntry: (id: number, edit?: boolean) => void }) => {
   const { theme, bibleFont, fontScale } = useTheme();
   const bibleFontFamily = getVFont(bibleFont).family;
   const [book, setBook] = useState<BibleBook | null>(null);
@@ -2157,16 +2178,19 @@ const BibleScreen = ({ navTarget, clearNavTarget }: { navTarget: NavTarget | nul
   const [usageModalEntries, setUsageModalEntries] = useState<{ id: number; title: string; created_at: string; category: string }[]>([]);
   const [verseUsageBadgeColor, setVerseUsageBadgeColor] = useState<string>('#8B4513');
   const [verseUsageBadgeOpacity, setVerseUsageBadgeOpacity] = useState<number>(1.0);
+  const [bookUsageMap, setBookUsageMap] = useState<Map<string, number>>(new Map());
 
   useEffect(() => { (async () => { const r = await db.getAllAsync<{ verse_id: string }>('SELECT verse_id FROM bookmarks'); setBmarks(new Set(r.map(x => x.verse_id))); const su = await db.getFirstAsync<{ value: string }>("SELECT value FROM app_settings WHERE key='show_verse_usage'"); if (su?.value === '1') setShowVerseUsage(true); const bc = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='verse_badge_color'"); if (bc?.value) setVerseUsageBadgeColor(bc.value); const bo = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='verse_badge_opacity'"); if (bo?.value) setVerseUsageBadgeOpacity(parseFloat(bo.value)); })(); }, []);
 
   useEffect(() => {
-    if (!showVerseUsage) { setVerseUsageMap(new Map()); return; }
+    if (!showVerseUsage) { setVerseUsageMap(new Map()); setBookUsageMap(new Map()); return; }
     (async () => {
       const rows = await db.getAllAsync<{ id: number; title: string; created_at: string; category: string; linked_verses: string }>('SELECT id, title, created_at, category, linked_verses FROM entries');
       const map = new Map<string, { id: number; title: string; created_at: string; category: string }[]>();
-      rows.forEach(e => { try { const linked = JSON.parse(e.linked_verses || '[]') as { book: string; chapter: number; verse: number }[]; linked.forEach(v => { const key = `${v.book}_${v.chapter}_${v.verse}`; if (!map.has(key)) map.set(key, []); map.get(key)!.push({ id: e.id, title: e.title, created_at: e.created_at, category: e.category }); }); } catch {} });
+      const bookCounts = new Map<string, Set<number>>();
+      rows.forEach(e => { try { const linked = JSON.parse(e.linked_verses || '[]') as { book: string; chapter: number; verse: number }[]; linked.forEach(v => { const key = `${v.book}_${v.chapter}_${v.verse}`; if (!map.has(key)) map.set(key, []); map.get(key)!.push({ id: e.id, title: e.title, created_at: e.created_at, category: e.category }); if (!bookCounts.has(v.book)) bookCounts.set(v.book, new Set()); bookCounts.get(v.book)!.add(e.id); }); } catch {} });
       setVerseUsageMap(map);
+      setBookUsageMap(new Map([...bookCounts.entries()].map(([k, v]) => [k, v.size])));
     })();
   }, [showVerseUsage]);
 
@@ -2187,7 +2211,7 @@ const BibleScreen = ({ navTarget, clearNavTarget }: { navTarget: NavTarget | nul
     <View style={[s.screen, { backgroundColor: theme.bg }]}>
       <View style={s.header}><Text style={[s.headerTxt, { color: theme.text }]}>📜 Библия</Text></View>
       <View style={s.filterRow}>{[['all','Все'],['old','Ветхий'],['new','Новый']].map(([k,l]) => <TouchableOpacity key={k} style={[s.filterBtn, filter === k && s.filterBtnAct, { backgroundColor: filter === k ? theme.primary : theme.surface, borderColor: filter === k ? theme.primary : theme.border }]} onPress={() => setFilter(k as any)}><Text style={[s.filterTxt, filter === k && s.filterTxtAct, { color: filter === k ? theme.textOn : theme.textSec }]}>{l}</Text></TouchableOpacity>)}</View>
-      <FlatList data={books} keyExtractor={i => i.name} renderItem={({ item }) => <TouchableOpacity style={[s.bookItem, { backgroundColor: theme.surface }]} onPress={() => setBook(item)}><View><Text style={[s.bookName, { color: theme.text }]}>{item.name}</Text><Text style={[s.bookChaps, { color: theme.textMuted }]}>{item.chapters} глав</Text></View><Ionicons name="chevron-forward" size={20} color={theme.textMuted} /></TouchableOpacity>} contentContainerStyle={s.list} />
+      <FlatList data={books} keyExtractor={i => i.name} renderItem={({ item }) => { const bookCount = showVerseUsage ? (bookUsageMap.get(item.name) || 0) : 0; return <TouchableOpacity style={[s.bookItem, { backgroundColor: theme.surface }]} onPress={() => setBook(item)}><View style={{ flex: 1 }}><Text style={[s.bookName, { color: theme.text }]}>{item.name}</Text><Text style={[s.bookChaps, { color: theme.textMuted }]}>{item.chapters} глав</Text></View>{bookCount > 0 && <View style={[s.vUsageBadge, { backgroundColor: verseUsageBadgeColor, opacity: verseUsageBadgeOpacity, marginRight: 8 }]}><Text style={{ fontSize: 9, color: '#fff', fontWeight: '700' }}>{bookCount}</Text></View>}<Ionicons name="chevron-forward" size={20} color={theme.textMuted} /></TouchableOpacity>; }} contentContainerStyle={s.list} />
     </View>
   );
 
@@ -2221,18 +2245,20 @@ const BibleScreen = ({ navTarget, clearNavTarget }: { navTarget: NavTarget | nul
         <TouchableOpacity style={s.overlay} activeOpacity={1} onPress={() => setUsageModalVerse(null)}>
           <View style={[s.picker, { backgroundColor: theme.surface, width: '90%', maxHeight: '60%' }]}>
             <Text style={[s.pickerTitle, { color: theme.text }]}>Стих в ваших записях</Text>
+            <Text style={{ fontSize: 11, color: theme.textMuted, marginBottom: 8 }}>Нажмите чтобы открыть · Удерживайте для редактирования</Text>
             <ScrollView>
               {usageModalEntries.map(e => {
                 const cs = catStyle(e.category as Cat);
                 return (
-                  <View key={e.id} style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: theme.borderLight }}>
+                  <TouchableOpacity key={e.id} style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: theme.borderLight }} onPress={() => { setUsageModalVerse(null); onOpenEntry(e.id); }} onLongPress={() => { setUsageModalVerse(null); onOpenEntry(e.id, true); }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 }}>
                       <Ionicons name={catIcon(e.category as Cat)} size={13} color={cs.color} />
                       <Text style={{ fontSize: 11, color: cs.color, fontWeight: '600' }}>{e.category}</Text>
+                      <Ionicons name="chevron-forward" size={13} color={theme.textMuted} style={{ marginLeft: 'auto' }} />
                     </View>
                     <Text style={{ fontSize: 14, color: theme.text, fontWeight: '600' }}>{e.title}</Text>
                     <Text style={{ fontSize: 12, color: theme.textMuted, marginTop: 2 }}>{fmtRelTime(e.created_at)}</Text>
-                  </View>
+                  </TouchableOpacity>
                 );
               })}
             </ScrollView>
@@ -2545,6 +2571,8 @@ const SettingsScreen = () => {
   const [showVerseUsageSetting, setShowVerseUsageSetting] = useState(false);
   const [verseUsageBadgeColor, setVerseUsageBadgeColor] = useState<string>('#8B4513');
   const [verseUsageBadgeOpacity, setVerseUsageBadgeOpacity] = useState<number>(1.0);
+  // Viewer card color
+  const [viewerCardColor, setViewerCardColor] = useState<string | null>(null);
   // Auto-backup state
   const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
   const [autoBackupInterval, setAutoBackupInterval] = useState<BackupInterval>('daily');
@@ -2623,6 +2651,9 @@ const SettingsScreen = () => {
     if (bc?.value) setVerseUsageBadgeColor(bc.value);
     const bo = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='verse_badge_opacity'");
     if (bo?.value) setVerseUsageBadgeOpacity(parseFloat(bo.value));
+    // Load viewer card color
+    const vc = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='viewer_card_color'");
+    setViewerCardColor(vc?.value || null);
 
     // Load auto-backup settings
     const abEnabled = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='autoBackupEnabled'");
@@ -2966,6 +2997,26 @@ const SettingsScreen = () => {
           <Text style={{ fontSize: 14, fontFamily: getVFont(bibleFont).family, color: theme.textSec, marginTop: 10, fontStyle: 'italic', lineHeight: 22 }}>"В начале сотворил Бог небо и землю."</Text>
         </View>
 
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>ДНЕВНИК</Text>
+          <View style={{ backgroundColor: theme.surface, borderRadius: 12, padding: 16 }}>
+            <Text style={{ fontSize: 15, fontWeight: '500', color: theme.text, marginBottom: 4 }}>Фон карточки записи</Text>
+            <Text style={{ fontSize: 12, color: theme.textMuted, marginBottom: 14 }}>Цвет области просмотра записи</Text>
+            <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
+              {([null, '#FFFBF0', '#F2FAF2', '#F0F6FF', '#FFF0F5', '#F5F0FF', '#FFF9E6'] as (string | null)[]).map(color => (
+                <TouchableOpacity key={color ?? 'none'} style={{ width: 40, height: 40, borderRadius: 12, backgroundColor: color ?? theme.bg, borderWidth: viewerCardColor === color ? 3 : 1.5, borderColor: viewerCardColor === color ? theme.primary : theme.border, justifyContent: 'center', alignItems: 'center' }} onPress={async () => { setViewerCardColor(color); if (color) { await db.runAsync("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('viewer_card_color', ?)", [color]); } else { await db.runAsync("DELETE FROM app_settings WHERE key='viewer_card_color'"); } }}>
+                  {viewerCardColor === color && <Ionicons name="checkmark" size={16} color={color ? '#555' : theme.primary} />}
+                  {color === null && <Text style={{ fontSize: 9, color: theme.textMuted, textAlign: 'center', lineHeight: 12 }}>{'Нет'}</Text>}
+                </TouchableOpacity>
+              ))}
+            </View>
+            {viewerCardColor && (
+              <View style={{ marginTop: 12, padding: 12, backgroundColor: viewerCardColor, borderRadius: 12 }}>
+                <Text style={{ fontSize: 13, color: '#555', fontStyle: 'italic' }}>Пример фона карточки</Text>
+              </View>
+            )}
+          </View>
+        </View>
+
         <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>БИБЛИЯ</Text>
           <View style={{ backgroundColor: theme.surface, borderRadius: 12, padding: 16 }}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -3148,7 +3199,7 @@ const SettingsScreen = () => {
           </TouchableOpacity>
         </View>
 
-        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 5.4</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 5.5</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
       </ScrollView>
       {showGraph && <GraphView entries={allEntries} folders={allFolders} onClose={() => setShowGraph(false)} />}
       {showTimePicker && (
