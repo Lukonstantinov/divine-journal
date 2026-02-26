@@ -18,12 +18,13 @@ A Russian-language spiritual journaling and Bible study mobile app built with Re
 ## Project Structure
 
 ```
-App.tsx              - Single-file app (~1,914 lines) containing all screens and logic
+App.tsx              - Single-file app (~3,392 lines) containing all screens and logic
 utils.ts             - Pure utility functions extracted for testability
 BibleVerses.ts       - Complete Russian Synodal Bible data (31,182 lines, 66 books)
+DailyReading.ts      - Daily reading logic (getFullDailyReading, DailyReadingResult, CustomPattern)
 __tests__/utils.test.ts - 46 unit tests for utility functions
 jest.config.js       - Jest configuration (ts-jest)
-app.json             - Expo configuration (com.lukkonas.divinejournal, portrait)
+app.json             - Expo configuration (com.lukkonas.divinejournal, portrait) — version: 5.4.0
 babel.config.js      - Babel config
 tsconfig.json        - TypeScript config
 package.json         - Dependencies
@@ -33,73 +34,170 @@ assets/              - App icons and splash images
 ENHANCEMENT_PLAN.md  - Full roadmap with code-level implementation details
 ```
 
-## App.tsx Internal Structure (line ranges)
+---
 
-```
-Lines 1-10       Imports (React, RN, expo-sqlite, Ionicons, BibleVerses, SafeArea, SVG, FileSystem, Sharing, DocumentPicker)
-Lines 14-42      THEMES object (light/dark/sepia palettes), ThemeContext, useTheme hook
-Lines 43-97      Constants: VERSE_COLORS, VERSE_FONTS, FONT_SIZES, TEXT_HIGHLIGHTS, MONTHS, WDAYS
-                 Types: TStyle, Block, Cat, Tab, Entry, Folder, Reading, Fasting, NavTarget
-Lines 98-147     initDb (8 tables + 1 migration), getDailyVerse, genId, parseBlocks, utility functions
-Lines 148-203    SafeAreaWrapper component
-Lines 204-241    ThemeProvider component (persistent theme/fontScale via app_settings table)
-Lines 242-266    App export: SafeAreaProvider → ThemeProvider → SafeAreaWrapper → AppContent (tab router)
-Lines 267-404    RTToolbar component (bold/italic/underline/font-size/highlight-picker/divider)
-Lines 405-751    JournalScreen — entries CRUD, block editor, verse embedding, folders, daily verse widget
-Lines 752-1311   CalendarScreen — calendar grid, daily notes (block editor), reading plans, fasting tracker
-Lines 1313-1363  BibleScreen — testament filter, book/chapter/verse navigation, bookmarks
-Lines 1365-1385  SearchScreen — debounced Bible search with navigation
-Lines 1386-1588  Graph types + computeGraph (force-directed layout) + GraphView component
-Lines 1589-1832  SettingsScreen — stats dashboard, themes, font scale, graph button, export/import, about
-Lines 1833-1914  StyleSheet.create (s = {...}) — all styles in one terse-named object
-```
+## App.tsx — Accurate Line Map (v5.4, ~3392 lines total)
 
-## App Capabilities
+> **IMPORTANT**: Line numbers shift as code is added. Always use `grep -n` to verify before editing.
+> Quick search: `grep -n "const JournalScreen\|const BibleScreen\|const CalendarScreen\|const SearchScreen\|const SettingsScreen\|const GraphView\|const s = StyleSheet" App.tsx`
 
-### 5 Main Screens (Bottom Tab Navigation)
+### Top-level layout
 
-1. **Journal (Дневник)** - Create/edit spiritual journal entries
-   - Four entry categories: Dream (Сон), Revelation (Откровение), Thought (Мысль), Prayer (Молитва)
-   - Block-based rich text editor (text blocks + verse blocks + divider blocks)
-   - Text formatting: bold, italic, underline, font size, font family, text highlighting (5 colors)
-   - Embed Bible verses with color-coded highlighting (gold, blue, green, purple, red, teal)
-   - Block reordering with up/down arrows
-   - Folder system for organizing entries (create, edit, delete folders with custom colors and icons)
-   - Daily verse widget with streak tracking
-   - Long-press to delete entries
+| Lines | What's there |
+|-------|-------------|
+| 1–13 | Imports (React, RN, expo-sqlite, Ionicons, BibleVerses, DailyReading, SafeArea, SVG, FileSystem, Sharing, DocumentPicker) |
+| 14–15 | `SW` = screen width constant |
+| 16–39 | `THEMES` object — light / dark / sepia palettes (all color values live here) |
+| 40–52 | `ThemeId`, `ThemeColors` types; `ThemeContext`; `useTheme` hook; `C` = THEMES.light (used in StyleSheet) |
+| 53–102 | Constants: `VERSE_COLORS`, `VERSE_FONTS`, `HIGHLIGHT_COLORS`, `FONT_SIZES`, `MONTHS`, `WDAYS` |
+| 75–93 | Types: `Cat`, `Tab`, `VerseHighlight`, `VerseData`, `TStyle`, `StyleRange`, `Block`, `TEXT_HIGHLIGHTS`, `Entry`, `Reading`, `Fasting`, `Folder`, `NavTarget`, `ReadStats` |
+| 103–116 | `ACHIEVEMENTS` array (streak, fasting days, chapters read) |
+| 117–123 | `FOLDER_ICONS`, `FOLDER_COLORS` constants |
+| 124–145 | `initDb()` — creates 9 tables + runs migrations |
+| 146–179 | Notification helpers: `scheduleReadingReminder`, `cancelReadingReminder`, `requestNotificationPermission` |
+| 181–280 | Auto-backup helpers: `BackupInterval`, `BackupFileInfo`, `getBackupDir`, `collectBackupData`, `listBackupFiles`, `cleanupOldBackups`, `performAutoBackup`, `shouldAutoBackup`, `tryAutoBackup` |
+| 281–355 | DB helpers: `checkAndUnlockAchievements`, `getFullDailyReading` wrappers |
+| 356–406 | Pure utility functions: `getDailyVerse`, `genId`, `parseBlocks`, `getVColor`, `getFSize`, `getVFont`, `scaledSz`, `fmtDate`, `fmtDateRu`, `fmtRelTime`, `getMonthDays`, `catStyle`, `catIcon` |
+| 407–421 | `SafeAreaWrapper` component |
+| 422–465 | `AppContent` — tab router, `navigateToBible`, tab bar render |
+| 466–511 | `ThemeProvider` — loads/persists theme, fontScale, bibleFont from `app_settings` |
+| 512–535 | `export default App()` — SafeAreaProvider → ThemeProvider → SafeAreaWrapper → AppContent |
+| 536–575 | `RTToolbar` — rich text formatting toolbar (bold/italic/underline/size/highlight/divider) |
+| 576–595 | `HighlightedVerseText` — renders verse text with inline highlight spans |
+| 596–675 | `VerseFormatModal` — modal for styling a verse block (font, highlights, color) |
+| 676–697 | `DailyReadingCard` — collapsible card shown at top of Journal screen |
+| 698–843 | `DailyReadingModal` — full reading modal (verse of day + Psalm + Proverb + custom plan) |
+| **844–1488** | **`JournalScreen`** |
+| **1489–2145** | **`CalendarScreen`** |
+| **2146–2245** | **`BibleScreen`** |
+| **2246–2269** | **`SearchScreen`** |
+| 2270–2276 | Graph types: `GraphNode`, `GraphEdge` |
+| 2277–2414 | `computeGraph()` — force-directed layout (60 iterations, JS) |
+| **2415–2526** | **`GraphView`** component (react-native-svg rendering) |
+| **2527–3276** | **`SettingsScreen`** |
+| **3277–3391** | **`StyleSheet.create(s = {...})`** — all styles |
 
-2. **Bible (Библия)** - Browse the full Russian Synodal Bible
-   - Three-level navigation: Testament -> Book -> Chapter
-   - Bookmark verses
-   - 39 Old Testament + 27 New Testament books
+---
 
-3. **Calendar (Календарь)** - Track entries, readings, and fasting
-   - Monthly calendar with entry/reading/fasting indicators
-   - Rich text daily notes (block-based editor with formatting toolbar)
-   - Reading plan generator (select book, start chapter, pace, duration)
-   - Preset reading plans (Bible in a year, NT in 90 days, Psalms, Gospels)
-   - Fasting tracker with date ranges, naming, and notes
+## Feature Location Map — JournalScreen (lines 844–1488)
 
-4. **Search (Поиск)** - Full-text Bible search
-   - Debounced search (300ms) across 31K+ verses
-   - Navigate directly to results in Bible view
+| Feature | Where in JournalScreen |
+|---------|----------------------|
+| State declarations | 845–892 |
+| `load()` — fetch entries + folders from DB | ~910–940 |
+| Daily verse fetch + widget state | 881, ~912–930 |
+| `isFastingEntry()` — cross-check fasting DB | 993–1000 |
+| `openEdit(e?)` — opens editor modal (new or edit) | 1051–1065 |
+| `reset()` — clears editor state | 1066 |
+| `save()` — insert/update entry in DB | ~1070–1100 |
+| `del(id)` — delete entry | ~1105 |
+| `saveVerseToJournal()` — add verse from daily reading | ~1010–1035 |
+| Folder CRUD (`addFolder`, `updateFolder`, `deleteFolder`) | ~1110–1160 |
+| `renderVerse(b)` — renders a verse block in viewer/editor | 1174 |
+| `renderText(b)` — renders a text block with inline formatting | 1176–1202 |
+| `preview(c)` / `vCount(c)` — card preview helpers | 1171–1172 |
+| Daily verse widget (collapsible banner) | ~1240–1270 |
+| Folder filter chips | ~1215–1235 |
+| Entry card `renderItem` (tap=viewer, long-press=editor, chevron=expand) | 1284–1308 |
+| Entry viewer modal (`viewing` state) | 1320–1329 |
+| Entry editor modal (blocks, toolbar, verse picker) | 1331–1480 |
+| Folder management modal | ~1390–1440 |
+| Daily reading modal trigger | 1311–1318 |
+| Backdated entry date picker | ~1450–1480 |
 
-5. **Settings (Ещё)** - Statistics, themes, tools, and data management
-   - Statistics dashboard: overview cards, category breakdown bars, monthly activity chart
-   - Achievements: entry streak, fasting days, chapters read
-   - Reading plan progress bar
-   - Theme system: light, dark, sepia with persistent settings
-   - Font scaling (0.8x to 1.4x)
-   - Knowledge graph visualization (entry connections via shared verses, categories, folders, keywords)
-   - Data export/import (JSON backup via share sheet)
-   - App info
+---
 
-### Database Schema (SQLite - `divine_journal.db`)
+## Feature Location Map — CalendarScreen (lines 1489–2145)
+
+| Feature | Where |
+|---------|-------|
+| State declarations | 1490–1530 |
+| `load()` — fetch readings, notes, fasting, entries for month | ~1535–1540 |
+| `toggleRead()` / `addRead()` | 1542–1543 |
+| Fasting start/end/name logic | 1554–1570 |
+| Reading plan generator (`generatePlan`) | ~1680–1760 |
+| Preset plans (Bible in a year, NT 90, Psalms, Gospels) | ~1710–1760 |
+| Calendar grid render | ~1770–1830 |
+| Day detail panel (notes, readings, fasting, entries) | ~1830–2000 |
+| Daily notes block editor (with RTToolbar) | ~1850–1950 |
+| Reading plan add/delete sheet | ~2000–2070 |
+| Fasting modal | ~2050–2130 |
+
+---
+
+## Feature Location Map — BibleScreen (lines 2146–2245)
+
+| Feature | Where |
+|---------|-------|
+| State declarations (book, chap, filter, bmarks, verseUsage, badge settings) | 2148–2162 |
+| Load bookmarks + badge settings from `app_settings` | 2163 (useEffect) |
+| Build `verseUsageMap` from all entries' `linked_verses` | 2170–2178 |
+| Navigate to target via `navTarget` prop | 2180–2186 |
+| `toggleBm(id)` — bookmark a verse | 2188 |
+| Book list view (filter: all/old/new) | 2193–2199 |
+| Chapter grid view | 2201–2205 |
+| Verse list view — vNum / vTxt / **usage badge** (right side) / bmBtn | 2208–2226 |
+| Usage count badge — uses `verseUsageBadgeColor` + `verseUsageBadgeOpacity` | 2214–2218 |
+| Usage entries modal (list of journal entries using that verse) | 2228–2245 |
+
+---
+
+## Feature Location Map — SettingsScreen (lines 2527–3276)
+
+| Feature | Where |
+|---------|-------|
+| State declarations | 2528–2558 |
+| `useEffect` — load all settings from DB (stats, reminders, achievements, custom pattern, badge settings) | 2560–2637 |
+| `exportData()` | 2644 |
+| `saveBackupSetting()` / `toggleAutoBackup()` / auto-backup controls | 2658–2730 |
+| `importData()` | ~2735–2780 |
+| Stats dashboard (overview cards, category bars, monthly chart) | ~2790–2870 |
+| Achievements grid | ~2870–2910 |
+| Reading plan progress bar | ~2910–2920 |
+| Theme picker (light/dark/sepia) | ~2920–2940 |
+| Font scale buttons | ~2940–2960 |
+| Bible font picker | ~2950–2970 |
+| **БИБЛИЯ section** — verse usage toggle + badge color/opacity | 2969–3005 |
+| Graph button (opens GraphView) | ~3005–3015 |
+| Reminders toggle + time picker | ~3015–3055 |
+| Daily reading custom pattern | ~3055–3120 |
+| Export / import buttons | ~3090–3120 |
+| Auto-backup section | ~3120–3200 |
+| About card (version display "Версия X.X") | 3132 |
+
+---
+
+## `app_settings` Key Reference
+
+All persistent settings live in the `app_settings` table (key TEXT PK, value TEXT):
+
+| Key | Type | Default | Used in |
+|-----|------|---------|---------|
+| `theme` | `'light'` \| `'dark'` \| `'sepia'` | `'light'` | ThemeProvider |
+| `fontScale` | float string | `'1'` | ThemeProvider |
+| `bibleFont` | string (font id) | `'serif'` | ThemeProvider |
+| `reminderEnabled` | `'0'`/`'1'` | `'0'` | SettingsScreen |
+| `reminderHour` | integer string | `'8'` | SettingsScreen |
+| `reminderMinute` | integer string | `'0'` | SettingsScreen |
+| `show_verse_usage` | `'0'`/`'1'` | `'0'` | BibleScreen, SettingsScreen |
+| `verse_badge_color` | hex color string | `'#8B4513'` | BibleScreen, SettingsScreen |
+| `verse_badge_opacity` | float string (0.25–1.0) | `'1'` | BibleScreen, SettingsScreen |
+| `daily_custom_pattern` | JSON string | null | SettingsScreen |
+| `saved_from_reading_count` | integer string | `'0'` | JournalScreen |
+| `autoBackupEnabled` | `'0'`/`'1'` | `'0'` | SettingsScreen |
+| `autoBackupInterval` | `'daily'`/`'weekly'`/`'monthly'`/`'custom'` | `'daily'` | SettingsScreen |
+| `autoBackupCustomDays` | integer string | `'3'` | SettingsScreen |
+| `autoBackupMaxFiles` | integer string | `'10'` | SettingsScreen |
+| `lastAutoBackupDate` | ISO date string | null | SettingsScreen |
+
+---
+
+## Database Schema (SQLite — `divine_journal.db`)
 
 ```sql
 entries          (id INTEGER PK, title TEXT, content TEXT, category TEXT DEFAULT 'мысль',
                   created_at DATETIME DEFAULT CURRENT_TIMESTAMP, linked_verses TEXT DEFAULT '[]',
-                  folder_id INTEGER DEFAULT NULL)
+                  folder_id INTEGER DEFAULT NULL, color TEXT DEFAULT NULL)
 bookmarks        (id INTEGER PK, verse_id TEXT UNIQUE, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)
 reading_plan     (id INTEGER PK, date TEXT, book TEXT, chapter INTEGER, completed BOOLEAN DEFAULT 0,
                   UNIQUE(date, book, chapter))
@@ -110,57 +208,87 @@ folders          (id INTEGER PK, name TEXT, color TEXT DEFAULT '#8B4513',
                   icon TEXT DEFAULT 'folder', sort_order INTEGER DEFAULT 0)
 daily_verse_history (id INTEGER PK, date TEXT UNIQUE, verse_id TEXT, seen BOOLEAN DEFAULT 0)
 app_settings     (key TEXT PK, value TEXT)
+achievements     (id TEXT PK, unlocked_at TEXT, title TEXT, description TEXT)
 ```
+
+---
 
 ## Development Notes
 
 ### Architecture
-- The entire app logic lives in `App.tsx` - there are no separate component files. **Keep it this way unless explicitly told otherwise.**
-- Pure utility functions are in `utils.ts` for testability — these are duplicated in App.tsx (not imported, to keep single-file pattern)
-- Bible data is statically imported from `BibleVerses.ts`
+- The entire app logic lives in `App.tsx` — no separate component files. **Keep it this way unless explicitly told otherwise.**
+- `utils.ts` has pure utility functions for testability — duplicated in App.tsx (not imported, to keep single-file pattern)
+- Bible data statically imported from `BibleVerses.ts`
+- Daily reading logic in `DailyReading.ts` (imported into App.tsx at line 12)
 - No external state management — all state is local `useState` within each screen component
-- Modals use RN `<Modal>` component. Bottom sheets use `sheetOverlay` + `sheet` styles
-- Cross-tab navigation: Calendar and Search can jump to specific Bible chapters via `navigateToBible()` callback
-- Each screen has its own `load()` callback triggered by `useEffect`
+- Modals use RN `<Modal>`. Bottom sheets use `sheetOverlay` + `sheet` styles
+- Cross-tab navigation: Calendar and Search jump to Bible chapters via `navigateToBible()` callback (AppContent, line ~430)
+- Each screen has its own `load()` triggered by `useEffect`
 
 ### Data formats
-- Entry blocks: JSON array of `Block[]` — each block is `{id, type:'text'|'verse'|'divider', content, boxColor?, textStyle?}`
-- Daily notes: Also Block[] JSON format (backward-compatible with legacy plain text strings)
-- Theme system: React Context (ThemeContext/ThemeProvider) with persistent DB storage in `app_settings` table
-- Daily verse: Deterministic selection using date-based hash `(seed * 2654435761) | 0`
-- Graph view: Force-directed layout (60 iterations) computed in JS, rendered with react-native-svg
+- Entry blocks: `Block[]` JSON — each block: `{id, type:'text'|'verse'|'divider', content, boxColor?, textStyle?, ranges?}`
+- Daily notes: Same `Block[]` JSON format (backward-compatible with legacy plain text strings)
+- Verse blocks: `content` = JSON-stringified `VerseData` object
+- `linked_verses` on entries: JSON array of `{book, chapter, verse}` objects (used by verseUsageMap in BibleScreen)
+- Theme: React Context (ThemeContext/ThemeProvider) + `app_settings` DB
+- Daily verse: Deterministic hash `(seed * 2654435761) | 0` in `getDailyVerse()`
+- Graph: Force-directed layout (60 iterations) in `computeGraph()`, rendered with react-native-svg
 
 ### Version Management
-- **Current version: v5.2**
-- **IMPORTANT**: On every code change that will be built into an APK, bump the version number (patch increment: 3.3 → 3.4 → 3.5 etc.)
-- Update version in **3 places**: `App.tsx` export `version` field, `App.tsx` "Версия X.X" display string, and `app.json` `"version"` field
-- This ensures the user can always verify they have the latest build installed
+- **Current version: v5.4**
+- **On every code change built into an APK, bump the version (patch: 5.4 → 5.5 etc.)**
+- Update in **3 places**:
+  1. `App.tsx` line ~195: `version: '5.X'` inside `collectBackupData()`
+  2. `App.tsx` Settings about card: `"Версия 5.X"` display string (~line 3132)
+  3. `app.json`: `"version": "5.X.0"`
+- **Also update this CLAUDE.md** — "Current version" above and the line map comments
 
 ### Style conventions
-- UI theme: warm earth tones with light/dark/sepia modes (brown primary #8B4513, tan accent #D4A574)
-- All user-facing strings must be in Russian
-- Style naming: terse convention in the `s` object (e.g., `headerTxt`, `cardHdr`, `badgeTxt`)
-- Color harmony: new UI elements should use colors from the `C` palette or extend it consistently
+- UI theme: warm earth tones — brown primary `#8B4513`, tan accent `#D4A574`
+- All user-facing strings must be in **Russian**
+- All styles in `const s = StyleSheet.create({...})` at line ~3277, using terse names (e.g., `headerTxt`, `cardHdr`, `badgeTxt`)
+- Static styles use `C.*` (= `THEMES.light`). Dynamic (theme-aware) styles applied inline via `{ color: theme.text }` etc.
+- New UI elements: use colors from `C` palette or extend `THEMES` consistently
+
+### Entry card interaction model
+- **Single tap** → opens full viewer modal (`setViewing(item)`)
+- **Long-press** → opens editor modal (`openEdit(item)`)
+- **Chevron icon** (in card header) → separate `TouchableOpacity`, toggles accordion expand/collapse
 
 ### Testing
-- Run tests: `npm test`
-- 46 unit tests in `__tests__/utils.test.ts` covering: fmtDate, getMonthDays, getDailyVerseIndex, getVColor, getFSize, extractKeywords, parseBlocks, parseNote, calcStreak
+- Run: `npm test`
+- 46 unit tests in `__tests__/utils.test.ts`: fmtDate, getMonthDays, getDailyVerseIndex, getVColor, getFSize, extractKeywords, parseBlocks, parseNote, calcStreak
 - Jest with ts-jest (NOT jest-expo — expo preset causes import scope errors with pure TS tests)
-- When adding new pure functions, add corresponding tests in `__tests__/`
+- New pure functions → add tests in `__tests__/`
 
 ### Known issues
-- Pre-existing TS errors (5 total): 4 Ionicons type inference issues (`string` not assignable to icon name union) + 1 BibleVerses.ts union type complexity error — these are harmless and existed before any enhancements
-- `expo-file-system` v19 uses the new API (`File`, `Paths` classes) — NOT the old `documentDirectory`/`writeAsStringAsync` legacy API. Import as `import { File as ExpoFile, Paths } from 'expo-file-system'`
+- Pre-existing TS errors (5 total): 4 Ionicons type inference issues (`string` not assignable to icon name union) + 1 BibleVerses.ts union type complexity error — harmless, existed before any enhancements
+- `expo-file-system` v19 uses the new API (`File`, `Paths`, `Directory` classes) — NOT the old `documentDirectory`/`writeAsStringAsync` API. Import: `import { File as ExpoFile, Directory, Paths } from 'expo-file-system'`
 
 ### Database migrations
-- Must be idempotent: use `CREATE TABLE IF NOT EXISTS` and wrap `ALTER TABLE` in try/catch
-- The `folder_id` column on `entries` is added via migration (try/catch around ALTER TABLE)
+- Must be idempotent: `CREATE TABLE IF NOT EXISTS`, wrap `ALTER TABLE` in try/catch
+- `folder_id` on `entries` is added via migration
+- `color` on `entries` is added via migration
+- `achievements` table created in `initDb()`
+
+---
+
+## CLAUDE.md Maintenance
+
+**When a PR is initiated or code changes are pushed:**
+1. Check if any new components, screens, or major features were added
+2. Update the **line map table** above (use `grep -n "const JournalScreen\|const BibleScreen..."` to get current lines)
+3. Update **version** in the "Current version" field
+4. Add new `app_settings` keys to the key reference table
+5. Update the feature location map for any screen that was modified
+
+---
 
 ## Enhancement Plan
 
-See `ENHANCEMENT_PLAN.md` for the full roadmap with code-level implementation details for each phase.
+See `ENHANCEMENT_PLAN.md` for the full roadmap with code-level implementation details.
 
-### Completed Phases
+### Completed
 - **Phase 1**: Critical UX fixes (toolbar above keyboard, scroll fixes)
 - **Phase 2**: Folder system for organizing entries
 - **Phase 3**: Statistics dashboard with charts
@@ -171,11 +299,13 @@ See `ENHANCEMENT_PLAN.md` for the full roadmap with code-level implementation de
 - **A1**: Export/import data
 - **Phase 8**: Daily reading system (verse of the day, Psalms, Proverbs, custom plans)
 - **Phase 9**: Backdated notes (custom date picker for entries)
+- **v5.3**: Bible verse usage badges, daily verse collapsible, note color tagging, collapsible sections, On This Day memories
+- **v5.4**: Badge moved to right-side of verse row, badge color/opacity customization in Settings, entry card tap=viewer/long-press=editor, card window-border styling
 
 ### Planned
 - **Feature 2**: "On This Day" — past years memories slider
 - **Feature 6**: Journal full-text search with filters
 - **Feature 9**: Entry pinning & favorites
 - **Feature 10**: Home screen widget (daily verse)
-- **A2**: Voice-to-text (keyboard built-in may suffice)
+- **A2**: Voice-to-text
 - **A4**: Cloud backup
