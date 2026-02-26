@@ -192,7 +192,7 @@ const getBackupDir = (): Directory => {
 };
 
 const collectBackupData = async () => ({
-  version: '5.3',
+  version: '5.4',
   exportDate: new Date().toISOString(),
   entries: await db.getAllAsync('SELECT * FROM entries'),
   bookmarks: await db.getAllAsync('SELECT * FROM bookmarks'),
@@ -1287,9 +1287,9 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
         const isExpanded = expandedCards.has(item.id);
         const borderColor = item.color || (isFasting ? '#9C27B0' : cs.color);
         return (
-          <TouchableOpacity style={[s.card, { borderLeftColor: borderColor, backgroundColor: theme.surface }, isFasting && { backgroundColor: theme.prayerBg }]}
-            onPress={() => setExpandedCards(prev => { const n = new Set(prev); n.has(item.id) ? n.delete(item.id) : n.add(item.id); return n; })}
-            onLongPress={() => setViewing(item)}>
+          <TouchableOpacity style={[s.card, { borderLeftColor: borderColor, borderColor: theme.border, backgroundColor: theme.surface }, isFasting && { backgroundColor: theme.prayerBg }]}
+            onPress={() => setViewing(item)}
+            onLongPress={() => openEdit(item)}>
             <View style={s.cardHdr}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                 <View style={[s.badge, { backgroundColor: cs.bg }]}><Ionicons name={catIcon(item.category)} size={14} color={cs.color} /><Text style={[s.badgeTxt, { color: cs.color }]}>{item.category}</Text></View>
@@ -1298,7 +1298,9 @@ const JournalScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: num
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Text style={[s.cardDate, { color: theme.textMuted }]}>{fmtRelTime(item.created_at)}</Text>
-                <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={15} color={theme.textMuted} />
+                <TouchableOpacity onPress={(e) => { e.stopPropagation?.(); setExpandedCards(prev => { const n = new Set(prev); n.has(item.id) ? n.delete(item.id) : n.add(item.id); return n; }); }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Ionicons name={isExpanded ? 'chevron-up' : 'chevron-down'} size={15} color={theme.textMuted} />
+                </TouchableOpacity>
               </View>
             </View>
             <Text style={[s.cardTitle, { color: theme.text, fontSize: scaledSz(17, fontScale) }]} numberOfLines={isExpanded ? undefined : 1}>{item.title}</Text>
@@ -2153,8 +2155,10 @@ const BibleScreen = ({ navTarget, clearNavTarget }: { navTarget: NavTarget | nul
   const [verseUsageMap, setVerseUsageMap] = useState<Map<string, { id: number; title: string; created_at: string; category: string }[]>>(new Map());
   const [usageModalVerse, setUsageModalVerse] = useState<string | null>(null);
   const [usageModalEntries, setUsageModalEntries] = useState<{ id: number; title: string; created_at: string; category: string }[]>([]);
+  const [verseUsageBadgeColor, setVerseUsageBadgeColor] = useState<string>('#8B4513');
+  const [verseUsageBadgeOpacity, setVerseUsageBadgeOpacity] = useState<number>(1.0);
 
-  useEffect(() => { (async () => { const r = await db.getAllAsync<{ verse_id: string }>('SELECT verse_id FROM bookmarks'); setBmarks(new Set(r.map(x => x.verse_id))); const su = await db.getFirstAsync<{ value: string }>("SELECT value FROM app_settings WHERE key='show_verse_usage'"); if (su?.value === '1') setShowVerseUsage(true); })(); }, []);
+  useEffect(() => { (async () => { const r = await db.getAllAsync<{ verse_id: string }>('SELECT verse_id FROM bookmarks'); setBmarks(new Set(r.map(x => x.verse_id))); const su = await db.getFirstAsync<{ value: string }>("SELECT value FROM app_settings WHERE key='show_verse_usage'"); if (su?.value === '1') setShowVerseUsage(true); const bc = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='verse_badge_color'"); if (bc?.value) setVerseUsageBadgeColor(bc.value); const bo = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='verse_badge_opacity'"); if (bo?.value) setVerseUsageBadgeOpacity(parseFloat(bo.value)); })(); }, []);
 
   useEffect(() => {
     if (!showVerseUsage) { setVerseUsageMap(new Map()); return; }
@@ -2202,13 +2206,13 @@ const BibleScreen = ({ navTarget, clearNavTarget }: { navTarget: NavTarget | nul
         const usageEntries = showVerseUsage ? (verseUsageMap.get(item.id) || []) : [];
         return (
           <View style={[s.verseItem, { backgroundColor: theme.surface }]}>
+            <Text style={[s.vNum, { color: theme.primary }]}>{item.verse}</Text>
+            <Text style={[s.vTxt, { color: theme.text, fontFamily: bibleFontFamily, fontSize: scaledSz(15, fontScale) }]}>{item.text}</Text>
             {showVerseUsage && usageEntries.length > 0 && (
-              <TouchableOpacity style={s.vUsageBadge} onPress={() => { setUsageModalVerse(item.id); setUsageModalEntries(usageEntries); }}>
+              <TouchableOpacity style={[s.vUsageBadge, { backgroundColor: verseUsageBadgeColor, opacity: verseUsageBadgeOpacity }]} onPress={() => { setUsageModalVerse(item.id); setUsageModalEntries(usageEntries); }}>
                 <Text style={{ fontSize: 9, color: '#fff', fontWeight: '700' }}>{usageEntries.length}</Text>
               </TouchableOpacity>
             )}
-            <Text style={[s.vNum, { color: theme.primary }]}>{item.verse}</Text>
-            <Text style={[s.vTxt, { color: theme.text, fontFamily: bibleFontFamily, fontSize: scaledSz(15, fontScale) }]}>{item.text}</Text>
             <TouchableOpacity onPress={() => toggleBm(item.id)} style={s.bmBtn}><Ionicons name={bmarks.has(item.id) ? 'bookmark' : 'bookmark-outline'} size={20} color={bmarks.has(item.id) ? theme.primary : theme.textMuted} /></TouchableOpacity>
           </View>
         );
@@ -2539,6 +2543,8 @@ const SettingsScreen = () => {
   const [showBookPicker, setShowBookPicker] = useState(false);
   // Bible verse usage toggle
   const [showVerseUsageSetting, setShowVerseUsageSetting] = useState(false);
+  const [verseUsageBadgeColor, setVerseUsageBadgeColor] = useState<string>('#8B4513');
+  const [verseUsageBadgeOpacity, setVerseUsageBadgeOpacity] = useState<number>(1.0);
   // Auto-backup state
   const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
   const [autoBackupInterval, setAutoBackupInterval] = useState<BackupInterval>('daily');
@@ -2613,6 +2619,10 @@ const SettingsScreen = () => {
     // Load Bible verse usage setting
     const vul = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='show_verse_usage'");
     if (vul?.value === '1') setShowVerseUsageSetting(true);
+    const bc = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='verse_badge_color'");
+    if (bc?.value) setVerseUsageBadgeColor(bc.value);
+    const bo = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='verse_badge_opacity'");
+    if (bo?.value) setVerseUsageBadgeOpacity(parseFloat(bo.value));
 
     // Load auto-backup settings
     const abEnabled = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='autoBackupEnabled'");
@@ -2967,6 +2977,26 @@ const SettingsScreen = () => {
                 <View style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: theme.textOn, alignSelf: showVerseUsageSetting ? 'flex-end' : 'flex-start', elevation: 2 }} />
               </TouchableOpacity>
             </View>
+            {showVerseUsageSetting && (
+              <View style={{ marginTop: 16, paddingTop: 16, borderTopWidth: 1, borderTopColor: theme.borderLight }}>
+                <Text style={{ fontSize: 13, color: theme.textMuted, marginBottom: 10 }}>Цвет значка</Text>
+                <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+                  {['#8B4513','#2196F3','#4CAF50','#E91E63','#9C27B0','#FF5722'].map(color => (
+                    <TouchableOpacity key={color} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: color, borderWidth: verseUsageBadgeColor === color ? 3 : 1.5, borderColor: verseUsageBadgeColor === color ? theme.text : 'transparent', justifyContent: 'center', alignItems: 'center' }} onPress={async () => { setVerseUsageBadgeColor(color); await db.runAsync("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('verse_badge_color', ?)", [color]); }}>
+                      {verseUsageBadgeColor === color && <Ionicons name="checkmark" size={14} color="#fff" />}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <Text style={{ fontSize: 13, color: theme.textMuted, marginBottom: 10 }}>Прозрачность</Text>
+                <View style={{ flexDirection: 'row', gap: 8 }}>
+                  {[0.25, 0.5, 0.75, 1.0].map(op => (
+                    <TouchableOpacity key={op} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: Math.abs(verseUsageBadgeOpacity - op) < 0.01 ? theme.primary : theme.border, backgroundColor: Math.abs(verseUsageBadgeOpacity - op) < 0.01 ? theme.primary + '20' : 'transparent', alignItems: 'center' }} onPress={async () => { setVerseUsageBadgeOpacity(op); await db.runAsync("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('verse_badge_opacity', ?)", [op.toString()]); }}>
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: Math.abs(verseUsageBadgeOpacity - op) < 0.01 ? theme.primary : theme.textSec }}>{Math.round(op * 100)}%</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
           </View>
         </View>
 
@@ -3118,7 +3148,7 @@ const SettingsScreen = () => {
           </TouchableOpacity>
         </View>
 
-        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 5.3</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 5.4</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
       </ScrollView>
       {showGraph && <GraphView entries={allEntries} folders={allFolders} onClose={() => setShowGraph(false)} />}
       {showTimePicker && (
@@ -3253,7 +3283,7 @@ const s = StyleSheet.create({
   toolbar: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.surfaceAlt, paddingHorizontal: 12, paddingVertical: 8, borderTopWidth: 1, borderTopColor: C.border },
   toolBtn: { width: 36, height: 36, justifyContent: 'center', alignItems: 'center', borderRadius: 8, marginHorizontal: 2, flexDirection: 'row' }, toolBtnAct: { backgroundColor: C.primary }, toolTxt: { fontSize: 16, fontWeight: '600', color: C.textSec }, toolTxtAct: { color: C.textOn }, toolDiv: { width: 1, height: 24, backgroundColor: C.border, marginHorizontal: 8 },
   dropdown: { position: 'absolute', bottom: 44, right: 8, backgroundColor: C.surface, borderRadius: 12, padding: 8, elevation: 5, zIndex: 100, minWidth: 100 }, dropItem: { paddingVertical: 10, paddingHorizontal: 12, borderRadius: 8 },
-  card: { backgroundColor: C.surface, borderRadius: 12, padding: 16, marginBottom: 12, borderLeftWidth: 4, elevation: 1 }, cardHdr: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  card: { backgroundColor: C.surface, borderRadius: 12, padding: 16, marginBottom: 12, borderLeftWidth: 4, borderWidth: 1, elevation: 2 }, cardHdr: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
   badge: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 }, badgeTxt: { fontSize: 12, fontWeight: '600', marginLeft: 4, textTransform: 'capitalize' },
   cardDate: { fontSize: 12, color: C.textMuted }, cardTitle: { fontSize: 17, fontWeight: '600', color: C.text, marginBottom: 6 }, cardPrev: { fontSize: 14, color: C.textSec, lineHeight: 20 },
   tags: { flexDirection: 'row', marginTop: 10, gap: 6 }, tag: { flexDirection: 'row', alignItems: 'center', backgroundColor: C.accentLight, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }, tagTxt: { fontSize: 11, color: C.primary, marginLeft: 4, fontWeight: '500' },
@@ -3358,5 +3388,5 @@ const s = StyleSheet.create({
   // On This Day memory cards
   memoryCard: { width: 130, padding: 12, borderRadius: 12, borderLeftWidth: 3, elevation: 1, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } },
   // Bible verse usage count badge
-  vUsageBadge: { width: 18, height: 18, borderRadius: 9, backgroundColor: C.primary, justifyContent: 'center', alignItems: 'center', marginRight: 4 },
+  vUsageBadge: { width: 18, height: 18, borderRadius: 9, justifyContent: 'center', alignItems: 'center', marginLeft: 6, alignSelf: 'flex-end' },
 });
