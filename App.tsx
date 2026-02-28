@@ -401,7 +401,7 @@ const getMonthDays = (y: number, m: number) => {
   return days;
 };
 
-const catStyle = (c: Cat) => ({ сон: { bg: C.dreamBg, color: C.success }, откровение: { bg: C.revBg, color: C.warning }, мысль: { bg: C.thoughtBg, color: C.primary }, молитва: { bg: C.prayerBg, color: '#7B4B94' } }[c]);
+const catStyle = (_c: Cat) => ({ bg: C.surfaceAlt, color: C.textMuted });
 const catIcon = (c: Cat) => ({ сон: 'moon', откровение: 'flash', мысль: 'bulb', молитва: 'heart' }[c]);
 
 // SafeArea Wrapper Component
@@ -905,6 +905,13 @@ const JournalScreen = ({ onNavigate, openEntry, onOpenEntryHandled }: { onNaviga
   const [dirty, setDirty] = useState(false);
   // Viewer card style
   const [viewerCardColor, setViewerCardColor] = useState<string | null>(null);
+  // Note color opacity & fasting border
+  const [noteColorOpacity, setNoteColorOpacity] = useState(0.10);
+  const [fastingBorderColor, setFastingBorderColor] = useState('#9C27B0');
+  // Multi-select state
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [showBatchFolderPicker, setShowBatchFolderPicker] = useState(false);
 
   useEffect(() => {
     const showSub = Keyboard.addListener('keyboardDidShow', () => setKeyboardVisible(true));
@@ -949,7 +956,11 @@ const JournalScreen = ({ onNavigate, openEntry, onOpenEntryHandled }: { onNaviga
     });
   }, []);
 
-  useEffect(() => { (async () => { const vc = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='viewer_card_color'"); setViewerCardColor(vc?.value || null); })(); }, []);
+  useEffect(() => { (async () => {
+    const vc = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='viewer_card_color'"); setViewerCardColor(vc?.value || null);
+    const nco = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='note_color_opacity'"); if (nco?.value) setNoteColorOpacity(parseFloat(nco.value));
+    const fbc = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='fasting_border_color'"); if (fbc?.value) setFastingBorderColor(fbc.value);
+  })(); }, []);
 
   useEffect(() => {
     if (openEntry && entries.length > 0) {
@@ -1220,9 +1231,22 @@ const JournalScreen = ({ onNavigate, openEntry, onOpenEntryHandled }: { onNaviga
   }, [entries, activeFolder, searchQ]);
   const getFolderName = (id: number | null) => { if (!id) return null; const f = folders.find(x => x.id === id); return f || null; };
 
+  // Multi-select helpers
+  const toggleSelect = (id: number) => { setSelectedIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; }); };
+  const selectAll = () => { setSelectedIds(new Set(filteredEntries.map(e => e.id))); };
+  const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()); };
+  const batchMoveToFolder = async (folderId: number | null) => {
+    if (selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+    for (const id of ids) { await db.runAsync('UPDATE entries SET folder_id=? WHERE id=?', [folderId, id]); }
+    setShowBatchFolderPicker(false);
+    exitSelectMode();
+    load();
+  };
+
   return (
     <View style={[s.screen, { backgroundColor: theme.bg }]}>
-      <View style={s.header}><Text style={[s.headerTxt, { color: theme.text }]}>📖 Духовный дневник</Text><TouchableOpacity style={[s.addBtn, { backgroundColor: theme.primary }]} onPress={() => openEdit()}><Ionicons name="add" size={28} color={theme.textOn} /></TouchableOpacity></View>
+      <View style={s.header}>{selectMode ? (<><TouchableOpacity onPress={exitSelectMode}><Text style={{ fontSize: 16, color: theme.primary, fontWeight: '600' }}>Отмена</Text></TouchableOpacity><Text style={[s.headerTxt, { color: theme.text, fontSize: 18 }]}>Выбрано: {selectedIds.size}</Text><TouchableOpacity onPress={selectAll}><Text style={{ fontSize: 14, color: theme.primary, fontWeight: '500' }}>Все</Text></TouchableOpacity></>) : (<><Text style={[s.headerTxt, { color: theme.text }]}>📖 Духовный дневник</Text><View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}><TouchableOpacity onPress={() => setSelectMode(true)} style={{ padding: 8 }}><Ionicons name="checkbox-outline" size={22} color={theme.textMuted} /></TouchableOpacity><TouchableOpacity style={[s.addBtn, { backgroundColor: theme.primary }]} onPress={() => openEdit()}><Ionicons name="add" size={28} color={theme.textOn} /></TouchableOpacity></View></>)}</View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.folderBar} contentContainerStyle={{ paddingHorizontal: 12, gap: 8, alignItems: 'center', paddingVertical: 4 }}>
         <TouchableOpacity style={[s.folderChip, !activeFolder && s.folderChipAct]} onPress={() => setActiveFolder(null)}>
           <Ionicons name="albums" size={14} color={!activeFolder ? theme.textOn : theme.textSec} />
@@ -1244,7 +1268,7 @@ const JournalScreen = ({ onNavigate, openEntry, onOpenEntryHandled }: { onNaviga
         <TextInput style={[s.searchIn, { color: theme.text, padding: 10, fontSize: 14 }]} value={searchQ} onChangeText={setSearchQ} placeholder="Поиск записей..." placeholderTextColor={theme.textMuted} />
         {searchQ.length > 0 && <TouchableOpacity onPress={() => setSearchQ('')}><Ionicons name="close-circle" size={18} color={theme.textMuted} /></TouchableOpacity>}
       </View>
-      {dailyVerse && <View style={[s.dailyVerseBand, { backgroundColor: theme.revBg, borderColor: theme.accent, borderLeftColor: theme.warning }]}>
+      {!selectMode && dailyVerse && <View style={[s.dailyVerseBand, { backgroundColor: theme.revBg, borderColor: theme.accent, borderLeftColor: theme.warning }]}>
         <TouchableOpacity onPress={() => setVerseExpanded(v => !v)} activeOpacity={0.8}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
@@ -1266,12 +1290,12 @@ const JournalScreen = ({ onNavigate, openEntry, onOpenEntryHandled }: { onNaviga
           </View>
         </>}
       </View>}
-      <DailyReadingCard
+      {!selectMode && <DailyReadingCard
         isRead={dailyIsRead}
         streak={readingStreak}
         onOpenReading={() => setShowDailyReadingModal(true)}
-      />
-      {memoriesEntries.length > 0 && <View style={{ marginHorizontal: 16, marginBottom: 8 }}>
+      />}
+      {!selectMode && memoriesEntries.length > 0 && <View style={{ marginHorizontal: 16, marginBottom: 8 }}>
         <Text style={{ fontSize: 12, fontWeight: '700', color: theme.textMuted, marginBottom: 6, letterSpacing: 0.5 }}>🕐 В ЭТОТ ДЕНЬ</Text>
         <FlatList
           horizontal
@@ -1280,14 +1304,13 @@ const JournalScreen = ({ onNavigate, openEntry, onOpenEntryHandled }: { onNaviga
           showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ gap: 8 }}
           renderItem={({ item: mem }) => {
-            const mcs = catStyle(mem.category);
             const memYear = mem.created_at.split('T')[0].split(' ')[0].slice(0, 4);
             return (
-              <TouchableOpacity style={[s.memoryCard, { backgroundColor: theme.surface, borderLeftColor: mem.color || mcs.color }]} onPress={() => setViewing(mem)}>
+              <TouchableOpacity style={[s.memoryCard, { backgroundColor: theme.surface, borderLeftColor: mem.color || theme.border }]} onPress={() => setViewing(mem)}>
                 <Text style={{ fontSize: 11, color: theme.primary, fontWeight: '700', marginBottom: 3 }}>{memYear}</Text>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, marginBottom: 3 }}>
-                  <Ionicons name={catIcon(mem.category)} size={11} color={mcs.color} />
-                  <Text style={{ fontSize: 10, color: mcs.color, fontWeight: '600' }}>{mem.category}</Text>
+                  <Ionicons name={catIcon(mem.category)} size={11} color={theme.textMuted} />
+                  <Text style={{ fontSize: 10, color: theme.textMuted, fontWeight: '600' }}>{mem.category}</Text>
                 </View>
                 <Text style={{ fontSize: 12, color: theme.text, fontWeight: '600' }} numberOfLines={2}>{mem.title}</Text>
               </TouchableOpacity>
@@ -1299,16 +1322,16 @@ const JournalScreen = ({ onNavigate, openEntry, onOpenEntryHandled }: { onNaviga
         const cs = catStyle(item.category), vc = vCount(item.content), pv = preview(item.content);
         const isFasting = isFastingEntry(item);
         const isExpanded = expandedCards.has(item.id);
-        const borderColor = item.color || (isFasting ? '#9C27B0' : cs.color);
+        const borderColor = item.color || (isFasting ? fastingBorderColor : theme.border);
         return (
-          <TouchableOpacity style={[s.card, { borderLeftColor: borderColor, borderColor: theme.border, backgroundColor: theme.surface }, isFasting && { backgroundColor: theme.prayerBg }]}
-            onPress={() => setViewing(item)}
-            onLongPress={() => openEdit(item)}>
+          <TouchableOpacity style={[s.card, { borderLeftColor: borderColor, borderColor: theme.border, backgroundColor: item.color ? item.color + Math.round(noteColorOpacity * 255).toString(16).padStart(2, '0') : theme.surface }, isFasting && { borderStyle: 'dashed' as const, borderWidth: 2, borderColor: fastingBorderColor, borderLeftWidth: 4, borderLeftColor: fastingBorderColor }, selectMode && selectedIds.has(item.id) && { borderColor: theme.primary, borderWidth: 2 }]}
+            onPress={() => { if (selectMode) { toggleSelect(item.id); } else { setViewing(item); } }}
+            onLongPress={() => { if (!selectMode) openEdit(item); }}>
             <View style={s.cardHdr}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <View style={[s.badge, { backgroundColor: cs.bg }]}><Ionicons name={catIcon(item.category)} size={14} color={cs.color} /><Text style={[s.badgeTxt, { color: cs.color }]}>{item.category}</Text></View>
-                {isFasting && <Ionicons name="flame" size={14} color="#9C27B0" />}
-                {item.color && <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: item.color }} />}
+                {selectMode && <View style={{ width: 22, height: 22, borderRadius: 6, borderWidth: 2, borderColor: selectedIds.has(item.id) ? theme.primary : theme.border, backgroundColor: selectedIds.has(item.id) ? theme.primary : 'transparent', justifyContent: 'center', alignItems: 'center' }}>{selectedIds.has(item.id) && <Ionicons name="checkmark" size={14} color={theme.textOn} />}</View>}
+                <View style={[s.badge, { backgroundColor: theme.surfaceAlt }]}><Ionicons name={catIcon(item.category)} size={14} color={theme.textMuted} /><Text style={[s.badgeTxt, { color: theme.textMuted }]}>{item.category}</Text></View>
+                {isFasting && <Ionicons name="flame" size={14} color={fastingBorderColor} />}
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Text style={[s.cardDate, { color: theme.textMuted }]}>{fmtRelTime(item.created_at)}</Text>
@@ -1322,7 +1345,50 @@ const JournalScreen = ({ onNavigate, openEntry, onOpenEntryHandled }: { onNaviga
             {isExpanded && (vc > 0 || item.folder_id) && <View style={s.tags}>{item.folder_id && (() => { const fl = getFolderName(item.folder_id); return fl ? <View style={[s.tag, { backgroundColor: fl.color + '20' }]}><Ionicons name={fl.icon as any} size={10} color={fl.color} /><Text style={[s.tagTxt, { color: fl.color }]}>{fl.name}</Text></View> : null; })()}{vc > 0 && <View style={s.tag}><Ionicons name="book" size={10} color={C.primary} /><Text style={s.tagTxt}>{vc} стих{vc > 1 ? (vc < 5 ? 'а' : 'ов') : ''}</Text></View>}</View>}
           </TouchableOpacity>
         );
-      }} contentContainerStyle={s.list} refreshing={refreshing} onRefresh={onRefresh} ListEmptyComponent={<View style={s.empty}><Ionicons name="journal-outline" size={64} color={theme.border} /><Text style={[s.emptyTxt, { color: theme.textMuted }]}>{searchQ ? 'Ничего не найдено' : 'Записей пока нет'}</Text>{!searchQ && <Text style={{ color: theme.textSec, fontSize: 14, textAlign: 'center', marginTop: 8, paddingHorizontal: 40, lineHeight: 20 }}>Нажмите «+» чтобы создать первую запись. Ведите дневник снов, откровений, мыслей и молитв.</Text>}</View>} />
+      }} contentContainerStyle={[s.list, selectMode && { paddingBottom: 80 }]} refreshing={refreshing} onRefresh={onRefresh} ListEmptyComponent={<View style={s.empty}><Ionicons name="journal-outline" size={64} color={theme.border} /><Text style={[s.emptyTxt, { color: theme.textMuted }]}>{searchQ ? 'Ничего не найдено' : 'Записей пока нет'}</Text>{!searchQ && <Text style={{ color: theme.textSec, fontSize: 14, textAlign: 'center', marginTop: 8, paddingHorizontal: 40, lineHeight: 20 }}>Нажмите «+» чтобы создать первую запись. Ведите дневник снов, откровений, мыслей и молитв.</Text>}</View>} />
+
+      {selectMode && selectedIds.size > 0 && (
+        <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: theme.surface, borderTopWidth: 1, borderTopColor: theme.border, paddingHorizontal: 16, paddingVertical: 12, flexDirection: 'row', gap: 12, elevation: 8 }}>
+          <TouchableOpacity style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingVertical: 12, borderRadius: 12, backgroundColor: theme.primary }} onPress={() => setShowBatchFolderPicker(true)}>
+            <Ionicons name="folder" size={18} color={theme.textOn} />
+            <Text style={{ fontSize: 15, fontWeight: '600', color: theme.textOn }}>Переместить ({selectedIds.size})</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={{ paddingVertical: 12, paddingHorizontal: 16, borderRadius: 12, backgroundColor: theme.surfaceAlt }} onPress={exitSelectMode}>
+            <Ionicons name="close" size={20} color={theme.textSec} />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      <Modal visible={showBatchFolderPicker} animationType="slide" transparent>
+        <View style={s.sheetOverlay}>
+          <TouchableOpacity style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} activeOpacity={1} onPress={() => setShowBatchFolderPicker(false)} />
+          <View style={[s.sheet, { backgroundColor: theme.bg }]}>
+            <View style={[s.sheetHdr, { borderBottomColor: theme.border }]}>
+              <Text style={[s.sheetTitle, { color: theme.text }]}>Переместить в папку</Text>
+              <TouchableOpacity onPress={() => setShowBatchFolderPicker(false)}><Ionicons name="close" size={24} color={theme.text} /></TouchableOpacity>
+            </View>
+            <ScrollView style={s.sheetList}>
+              <TouchableOpacity style={[s.sheetItem, { borderBottomColor: theme.borderLight }]} onPress={() => batchMoveToFolder(null)}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <View style={{ width: 36, height: 36, borderRadius: 8, backgroundColor: theme.surfaceAlt, justifyContent: 'center', alignItems: 'center' }}><Ionicons name="albums-outline" size={18} color={theme.textMuted} /></View>
+                  <Text style={[s.sheetItemTxt, { color: theme.text }]}>Без папки</Text>
+                </View>
+              </TouchableOpacity>
+              {folders.map(f => (
+                <TouchableOpacity key={f.id} style={[s.sheetItem, { borderBottomColor: theme.borderLight }]} onPress={() => batchMoveToFolder(f.id)}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <View style={{ width: 36, height: 36, borderRadius: 8, backgroundColor: f.color + '20', justifyContent: 'center', alignItems: 'center' }}><Ionicons name={f.icon as any} size={18} color={f.color} /></View>
+                    <View>
+                      <Text style={[s.sheetItemTxt, { color: theme.text }]}>{f.name}</Text>
+                      <Text style={[s.sheetItemSub, { color: theme.textMuted }]}>{folderEntryCount(f.id)} записей</Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       <DailyReadingModal
         visible={showDailyReadingModal && !!dailyReadingResult}
@@ -1338,7 +1404,7 @@ const JournalScreen = ({ onNavigate, openEntry, onOpenEntryHandled }: { onNaviga
           <View style={[s.modalHdr, { borderBottomColor: theme.border }]} onLayout={e => setViewHeaderH(e.nativeEvent.layout.height)}><TouchableOpacity onPress={() => setViewing(null)}><Ionicons name="close" size={24} color={theme.text} /></TouchableOpacity><Text style={[s.modalTitle, { color: theme.text }]} numberOfLines={1}>{viewing?.title}</Text><TouchableOpacity onPress={() => viewing && openEdit(viewing)}><Ionicons name="create-outline" size={24} color={theme.primary} /></TouchableOpacity></View>
           {viewing && <ScrollView style={{ height: viewContainerH - viewHeaderH }} contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
             <View style={viewerCardColor ? { backgroundColor: viewerCardColor, borderRadius: 18, padding: 16, marginBottom: 4, shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 10, elevation: 2 } : { paddingHorizontal: 4 }}>
-              <View style={s.viewMeta}><View style={[s.badge, { backgroundColor: catStyle(viewing.category).bg }]}><Ionicons name={catIcon(viewing.category)} size={14} color={catStyle(viewing.category).color} /><Text style={[s.badgeTxt, { color: catStyle(viewing.category).color }]}>{viewing.category}</Text></View><Text style={s.viewDate}>{new Date(viewing.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text></View>
+              <View style={s.viewMeta}><View style={[s.badge, { backgroundColor: theme.surfaceAlt }]}><Ionicons name={catIcon(viewing.category)} size={14} color={theme.textMuted} /><Text style={[s.badgeTxt, { color: theme.textMuted }]}>{viewing.category}</Text></View><Text style={s.viewDate}>{new Date(viewing.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text></View>
               {parseBlocks(viewing.content).map(b => <View key={b.id}>{b.type === 'divider' ? <View style={{ height: 1, backgroundColor: theme.border, marginVertical: 12 }} /> : b.type === 'text' ? renderText(b) : renderVerse(b)}</View>)}
             </View>
             <TouchableOpacity style={[s.delBtn, { marginTop: 16 }]} onPress={() => viewing && del(viewing.id)}><Ionicons name="trash-outline" size={20} color={C.error} /><Text style={s.delTxt}>Удалить</Text></TouchableOpacity>
@@ -1351,7 +1417,7 @@ const JournalScreen = ({ onNavigate, openEntry, onOpenEntryHandled }: { onNaviga
           <View style={[s.modalHdr, { borderBottomColor: theme.border }]}><TouchableOpacity onPress={confirmClose}><Ionicons name="close" size={24} color={theme.text} /></TouchableOpacity><Text style={[s.modalTitle, { color: theme.text }]}>{editing ? 'Редактировать' : 'Новая запись'}</Text><TouchableOpacity onPress={save}><Text style={[s.saveTxt, { color: theme.primary }]}>Сохранить</Text></TouchableOpacity></View>
           <ScrollView ref={scrollRef} style={s.modalBody} contentContainerStyle={{ paddingBottom: 20 }} keyboardShouldPersistTaps="handled" scrollEventThrottle={16}>
             <Text style={s.label}>Категория</Text>
-            <View style={s.catPicker}>{(['сон','откровение','мысль','молитва'] as Cat[]).map(c => { const cs = catStyle(c); return <TouchableOpacity key={c} style={[s.catOpt, { backgroundColor: cs.bg }, cat === c && { borderColor: cs.color }]} onPress={() => setCat(c)}><Ionicons name={catIcon(c)} size={16} color={cs.color} /><Text style={[s.catOptTxt, { color: cs.color }]}>{c}</Text></TouchableOpacity>; })}</View>
+            <View style={s.catPicker}>{(['сон','откровение','мысль','молитва'] as Cat[]).map(c => { return <TouchableOpacity key={c} style={[s.catOpt, { backgroundColor: theme.surfaceAlt }, cat === c && { borderColor: theme.primary, borderWidth: 2 }]} onPress={() => setCat(c)}><Ionicons name={catIcon(c)} size={16} color={cat === c ? theme.primary : theme.textMuted} /><Text style={[s.catOptTxt, { color: cat === c ? theme.primary : theme.textMuted }]}>{c}</Text></TouchableOpacity>; })}</View>
             <Text style={[s.label, { color: theme.textSec }]}>Цвет записи</Text>
             <View style={{ flexDirection: 'row', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
               <TouchableOpacity style={[s.fmtColorItem, { backgroundColor: theme.surface, borderColor: entryColor === null ? theme.primary : theme.border, borderWidth: entryColor === null ? 3 : 2 }]} onPress={() => { setEntryColor(null); setDirty(true); }}><Ionicons name="close" size={14} color={theme.textMuted} /></TouchableOpacity>
@@ -2145,7 +2211,7 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
             </View>
             <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
               <View style={viewerCardColor ? { backgroundColor: viewerCardColor, borderRadius: 18, padding: 16, marginBottom: 4, shadowColor: '#000', shadowOpacity: 0.07, shadowRadius: 10, elevation: 2 } : { paddingHorizontal: 4 }}>
-              <View style={s.viewMeta}><View style={[s.badge, { backgroundColor: catStyle(viewingEntry.category).bg }]}><Ionicons name={catIcon(viewingEntry.category) as any} size={14} color={catStyle(viewingEntry.category).color} /><Text style={[s.badgeTxt, { color: catStyle(viewingEntry.category).color }]}>{viewingEntry.category}</Text></View><Text style={[s.viewDate, { color: theme.textMuted }]}>{new Date(viewingEntry.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text></View>
+              <View style={s.viewMeta}><View style={[s.badge, { backgroundColor: theme.surfaceAlt }]}><Ionicons name={catIcon(viewingEntry.category) as any} size={14} color={theme.textMuted} /><Text style={[s.badgeTxt, { color: theme.textMuted }]}>{viewingEntry.category}</Text></View><Text style={[s.viewDate, { color: theme.textMuted }]}>{new Date(viewingEntry.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text></View>
               {parseBlocks(viewingEntry.content).map(b => {
                 if (b.type === 'divider') return <View key={b.id} style={{ height: 1, backgroundColor: theme.border, marginVertical: 12 }} />;
                 if (b.type === 'verse') { try { const d = JSON.parse(b.content) as VerseData; const vc = getVColor(b.boxColor); const ref = d.verseEnd ? `${d.book} ${d.chapter}:${d.verse}-${d.verseEnd}` : `${d.book} ${d.chapter}:${d.verse}`; return <View key={b.id} style={[s.verseView, { backgroundColor: vc.bg, borderLeftColor: vc.border }]}><View style={s.verseHdr}><Ionicons name="book" size={16} color={vc.border} /><Text style={[s.verseRef, { color: vc.border }]}>{ref}</Text></View><Text style={[s.verseTxt, { color: theme.text }]}>{d.text}</Text></View>; } catch { return null; } }
@@ -2248,12 +2314,11 @@ const BibleScreen = ({ navTarget, clearNavTarget, onOpenEntry }: { navTarget: Na
             <Text style={{ fontSize: 11, color: theme.textMuted, marginBottom: 8 }}>Нажмите чтобы открыть · Удерживайте для редактирования</Text>
             <ScrollView>
               {usageModalEntries.map(e => {
-                const cs = catStyle(e.category as Cat);
                 return (
                   <TouchableOpacity key={e.id} style={{ paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: theme.borderLight }} onPress={() => { setUsageModalVerse(null); onOpenEntry(e.id); }} onLongPress={() => { setUsageModalVerse(null); onOpenEntry(e.id, true); }}>
                     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 3 }}>
-                      <Ionicons name={catIcon(e.category as Cat)} size={13} color={cs.color} />
-                      <Text style={{ fontSize: 11, color: cs.color, fontWeight: '600' }}>{e.category}</Text>
+                      <Ionicons name={catIcon(e.category as Cat)} size={13} color={theme.textMuted} />
+                      <Text style={{ fontSize: 11, color: theme.textMuted, fontWeight: '600' }}>{e.category}</Text>
                       <Ionicons name="chevron-forward" size={13} color={theme.textMuted} style={{ marginLeft: 'auto' }} />
                     </View>
                     <Text style={{ fontSize: 14, color: theme.text, fontWeight: '600' }}>{e.title}</Text>
@@ -2304,7 +2369,7 @@ const computeGraph = (entries: Entry[], folders: Folder[]): { nodes: GraphNode[]
   const nodes: GraphNode[] = [];
   const edges: GraphEdge[] = [];
   const nodeMap = new Map<string, GraphNode>();
-  const catColors: Record<string, string> = { сон: '#4A7C59', откровение: '#B8860B', мысль: '#8B4513', молитва: '#7B4B94' };
+  const catColors: Record<string, string> = { сон: '#8B4513', откровение: '#8B4513', мысль: '#8B4513', молитва: '#8B4513' };
 
   // Entry nodes
   entries.slice(0, 40).forEach(e => {
@@ -2540,7 +2605,7 @@ const GraphView = ({ entries, folders, onClose }: { entries: Entry[]; folders: F
               <View style={{ width: 24 }} />
             </View>
             <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, paddingBottom: 60 }}>
-              <View style={s.viewMeta}><View style={[s.badge, { backgroundColor: catStyle(viewEntry.category).bg }]}><Ionicons name={catIcon(viewEntry.category) as any} size={14} color={catStyle(viewEntry.category).color} /><Text style={[s.badgeTxt, { color: catStyle(viewEntry.category).color }]}>{viewEntry.category}</Text></View><Text style={[s.viewDate, { color: theme.textMuted }]}>{new Date(viewEntry.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text></View>
+              <View style={s.viewMeta}><View style={[s.badge, { backgroundColor: theme.surfaceAlt }]}><Ionicons name={catIcon(viewEntry.category) as any} size={14} color={theme.textMuted} /><Text style={[s.badgeTxt, { color: theme.textMuted }]}>{viewEntry.category}</Text></View><Text style={[s.viewDate, { color: theme.textMuted }]}>{new Date(viewEntry.created_at).toLocaleDateString('ru-RU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</Text></View>
               {parseBlocks(viewEntry.content).map(b => <View key={b.id}>{renderEntryBlock(b)}</View>)}
             </ScrollView>
           </SafeAreaView></SafeAreaProvider>
@@ -2573,6 +2638,9 @@ const SettingsScreen = () => {
   const [verseUsageBadgeOpacity, setVerseUsageBadgeOpacity] = useState<number>(1.0);
   // Viewer card color
   const [viewerCardColor, setViewerCardColor] = useState<string | null>(null);
+  // Note color opacity & fasting border
+  const [noteColorOpacity, setNoteColorOpacity] = useState(0.10);
+  const [fastingBorderColor, setFastingBorderColor] = useState('#9C27B0');
   // Auto-backup state
   const [autoBackupEnabled, setAutoBackupEnabled] = useState(false);
   const [autoBackupInterval, setAutoBackupInterval] = useState<BackupInterval>('daily');
@@ -2654,6 +2722,11 @@ const SettingsScreen = () => {
     // Load viewer card color
     const vc = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='viewer_card_color'");
     setViewerCardColor(vc?.value || null);
+    // Load note color opacity & fasting border
+    const nco = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='note_color_opacity'");
+    if (nco?.value) setNoteColorOpacity(parseFloat(nco.value));
+    const fbc = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='fasting_border_color'");
+    if (fbc?.value) setFastingBorderColor(fbc.value);
 
     // Load auto-backup settings
     const abEnabled = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='autoBackupEnabled'");
@@ -2670,7 +2743,7 @@ const SettingsScreen = () => {
   })(); }, []);
 
   const totalEntries = Math.max(stats.e, 1);
-  const catColors: Record<Cat, string> = { сон: theme.success, откровение: theme.warning, мысль: theme.primary, молитва: '#7B4B94' };
+  const catColors: Record<Cat, string> = { сон: theme.primary, откровение: theme.primary, мысль: theme.primary, молитва: theme.primary };
   const maxMonth = Math.max(...byMonth.map(m => m.count), 1);
   const readPct = stats.totalR > 0 ? Math.round((stats.r / stats.totalR) * 100) : 0;
 
@@ -3014,6 +3087,37 @@ const SettingsScreen = () => {
                 <Text style={{ fontSize: 13, color: '#555', fontStyle: 'italic' }}>Пример фона карточки</Text>
               </View>
             )}
+          </View>
+          <View style={{ backgroundColor: theme.surface, borderRadius: 12, padding: 16, marginTop: 12 }}>
+            <Text style={{ fontSize: 15, fontWeight: '500', color: theme.text, marginBottom: 4 }}>Прозрачность цвета записи</Text>
+            <Text style={{ fontSize: 12, color: theme.textMuted, marginBottom: 14 }}>Интенсивность цветного фона карточек</Text>
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {[0.05, 0.10, 0.15, 0.20].map(op => (
+                <TouchableOpacity key={op} style={{ flex: 1, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: Math.abs(noteColorOpacity - op) < 0.01 ? theme.primary : theme.border, backgroundColor: Math.abs(noteColorOpacity - op) < 0.01 ? theme.primary + '20' : 'transparent', alignItems: 'center' }} onPress={async () => { setNoteColorOpacity(op); await db.runAsync("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('note_color_opacity', ?)", [op.toString()]); }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: Math.abs(noteColorOpacity - op) < 0.01 ? theme.primary : theme.textSec }}>{Math.round(op * 100)}%</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={{ marginTop: 12, padding: 12, borderRadius: 12, backgroundColor: '#5B9BD5' + Math.round(noteColorOpacity * 255).toString(16).padStart(2, '0'), borderLeftWidth: 4, borderLeftColor: '#5B9BD5' }}>
+              <Text style={{ fontSize: 13, color: theme.text, fontStyle: 'italic' }}>Пример карточки с цветом</Text>
+            </View>
+          </View>
+          <View style={{ backgroundColor: theme.surface, borderRadius: 12, padding: 16, marginTop: 12 }}>
+            <Text style={{ fontSize: 15, fontWeight: '500', color: theme.text, marginBottom: 4 }}>Обрамление записей поста</Text>
+            <Text style={{ fontSize: 12, color: theme.textMuted, marginBottom: 14 }}>Цвет пунктирной рамки для дней поста</Text>
+            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
+              {['#9C27B0', '#7B1FA2', '#4A148C', '#E91E63', '#8B4513', '#2196F3'].map(color => (
+                <TouchableOpacity key={color} style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: color, borderWidth: fastingBorderColor === color ? 3 : 1.5, borderColor: fastingBorderColor === color ? theme.text : 'transparent', justifyContent: 'center', alignItems: 'center' }} onPress={async () => { setFastingBorderColor(color); await db.runAsync("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('fasting_border_color', ?)", [color]); }}>
+                  {fastingBorderColor === color && <Ionicons name="checkmark" size={14} color="#fff" />}
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={{ padding: 12, borderRadius: 12, borderWidth: 2, borderStyle: 'dashed', borderColor: fastingBorderColor, backgroundColor: theme.surface }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Ionicons name="flame" size={14} color={fastingBorderColor} />
+                <Text style={{ fontSize: 13, color: theme.text, fontStyle: 'italic' }}>Пример карточки дня поста</Text>
+              </View>
+            </View>
           </View>
         </View>
 

@@ -104,6 +104,10 @@ ENHANCEMENT_PLAN.md  - Full roadmap with code-level implementation details
 | Folder management modal | ~1390–1440 |
 | Daily reading modal trigger | 1311–1318 |
 | Backdated entry date picker | ~1450–1480 |
+| Multi-select helpers (`toggleSelect`, `selectAll`, `exitSelectMode`, `batchMoveToFolder`) | ~1233–1246 |
+| Multi-select state (`selectMode`, `selectedIds`, `showBatchFolderPicker`) | ~911–913 |
+| Note color opacity & fasting border state + DB load | ~908–910, ~957–960 |
+| Multi-select bottom action bar + folder picker modal | after FlatList |
 
 ---
 
@@ -189,6 +193,8 @@ All persistent settings live in the `app_settings` table (key TEXT PK, value TEX
 | `autoBackupCustomDays` | integer string | `'3'` | SettingsScreen |
 | `autoBackupMaxFiles` | integer string | `'10'` | SettingsScreen |
 | `lastAutoBackupDate` | ISO date string | null | SettingsScreen |
+| `note_color_opacity` | float string (0.05–0.20) | `'0.10'` | JournalScreen, SettingsScreen |
+| `fasting_border_color` | hex color string | `'#9C27B0'` | JournalScreen, SettingsScreen |
 
 ---
 
@@ -301,6 +307,7 @@ See `ENHANCEMENT_PLAN.md` for the full roadmap with code-level implementation de
 - **Phase 9**: Backdated notes (custom date picker for entries)
 - **v5.3**: Bible verse usage badges, daily verse collapsible, note color tagging, collapsible sections, On This Day memories
 - **v5.4**: Badge moved to right-side of verse row, badge color/opacity customization in Settings, entry card tap=viewer/long-press=editor, card window-border styling
+- **v5.5**: Note color gradient backgrounds (replace dot with transparent card wash), fasting dashed borders, uniform category badges, multi-select batch folder move, note color opacity + fasting border color settings
 
 ### Planned
 - **Feature 2**: "On This Day" — past years memories slider
