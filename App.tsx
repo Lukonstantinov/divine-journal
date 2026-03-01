@@ -60,9 +60,13 @@ const VERSE_COLORS = [
 ];
 
 const VERSE_FONTS = [
-  { id: 'serif', name: 'Serif', family: Platform.OS === 'ios' ? 'Georgia' : 'serif' },
-  { id: 'sans', name: 'Sans', family: Platform.OS === 'ios' ? 'Helvetica' : 'sans-serif' },
+  { id: 'serif', name: 'Серифный', family: Platform.OS === 'ios' ? 'Georgia' : 'serif' },
+  { id: 'times', name: 'Times', family: Platform.OS === 'ios' ? 'Times New Roman' : 'serif' },
+  { id: 'sans', name: 'Гротеск', family: Platform.OS === 'ios' ? 'Helvetica' : 'sans-serif' },
   { id: 'roboto', name: 'Roboto', family: Platform.OS === 'ios' ? 'Helvetica Neue' : 'Roboto' },
+  { id: 'light', name: 'Тонкий', family: Platform.OS === 'ios' ? 'HelveticaNeue-Light' : 'sans-serif-light' },
+  { id: 'condensed', name: 'Узкий', family: Platform.OS === 'ios' ? 'AvenirNextCondensed-Regular' : 'sans-serif-condensed' },
+  { id: 'mono', name: 'Моно', family: Platform.OS === 'ios' ? 'Courier New' : 'monospace' },
 ];
 const HIGHLIGHT_COLORS = [
   { id: 'yellow', bg: '#FFF59D' }, { id: 'green', bg: '#A5D6A7' },
@@ -192,7 +196,7 @@ const getBackupDir = (): Directory => {
 };
 
 const collectBackupData = async () => ({
-  version: '5.5',
+  version: '5.6',
   exportDate: new Date().toISOString(),
   entries: await db.getAllAsync('SELECT * FROM entries'),
   bookmarks: await db.getAllAsync('SELECT * FROM bookmarks'),
@@ -896,6 +900,8 @@ const JournalScreen = ({ onNavigate, openEntry, onOpenEntryHandled }: { onNaviga
   const [showDailyReadingModal, setShowDailyReadingModal] = useState(false);
   const [dailyReadingResult, setDailyReadingResult] = useState<DailyReadingResult | null>(null);
   const [customPattern, setCustomPattern] = useState<CustomPattern | null>(null);
+  // Reading plan progress
+  const [planStats, setPlanStats] = useState<{ total: number; done: number; nextBook: string | null; nextChap: number | null } | null>(null);
   // View modal layout state
   const [viewContainerH, setViewContainerH] = useState(Dimensions.get('window').height);
   const [viewHeaderH, setViewHeaderH] = useState(57);
@@ -980,6 +986,13 @@ const JournalScreen = ({ onNavigate, openEntry, onOpenEntryHandled }: { onNaviga
     }));
     setFasts(await db.getAllAsync<Fasting>('SELECT * FROM fasting'));
     setFolders(await db.getAllAsync<Folder>('SELECT * FROM folders ORDER BY sort_order ASC'));
+    // Reading plan progress
+    const planTotal = await db.getFirstAsync<{ cnt: number }>('SELECT COUNT(*) as cnt FROM reading_plan');
+    if ((planTotal?.cnt ?? 0) > 0) {
+      const planDone = await db.getFirstAsync<{ cnt: number }>('SELECT COUNT(*) as cnt FROM reading_plan WHERE completed = 1');
+      const nextItem = await db.getFirstAsync<{ book: string; chapter: number }>('SELECT book, chapter FROM reading_plan WHERE completed = 0 ORDER BY date ASC, book ASC, chapter ASC LIMIT 1');
+      setPlanStats({ total: planTotal!.cnt, done: planDone?.cnt ?? 0, nextBook: nextItem?.book ?? null, nextChap: nextItem?.chapter ?? null });
+    } else { setPlanStats(null); }
   }, []);
 
   const onRefresh = useCallback(async () => {
@@ -1181,7 +1194,7 @@ const JournalScreen = ({ onNavigate, openEntry, onOpenEntryHandled }: { onNaviga
 
   const mkVerseBlock = (vs: BibleVerse[], col: string): Block => {
     const f = vs[0], l = vs[vs.length - 1];
-    return { id: genId(), type: 'verse', content: JSON.stringify({ book: f.book, chapter: f.chapter, verse: f.verse, verseEnd: vs.length > 1 ? l.verse : undefined, text: vs.map(v => `${v.verse}. ${v.text}`).join(' ') }), boxColor: col };
+    return { id: genId(), type: 'verse', content: JSON.stringify({ book: f.book, chapter: f.chapter, verse: f.verse, verseEnd: vs.length > 1 ? l.verse : undefined, text: vs.map(v => v.text.charAt(0).toUpperCase() + v.text.slice(1)).join(' ') }), boxColor: col };
   };
 
   const updateColor = (id: string, col: string) => { setBlocks(bs => bs.map(b => b.id === id ? { ...b, boxColor: col } : b)); setColorPick(null); };
@@ -1200,7 +1213,7 @@ const JournalScreen = ({ onNavigate, openEntry, onOpenEntryHandled }: { onNaviga
 
   const renderText = (b: Block) => {
     if (!b.content) return null;
-    const base: any = { ...s.viewTxt, color: theme.text, fontSize: scaledSz(b.textStyle?.fontSize ? getFSize(b.textStyle.fontSize) : 16, fontScale) };
+    const base: any = { ...s.viewTxt, color: theme.text, fontFamily: bibleFontFamily, fontSize: scaledSz(b.textStyle?.fontSize ? getFSize(b.textStyle.fontSize) : 16, fontScale) };
     if (b.textStyle?.fontSize) base.fontSize = scaledSz(getFSize(b.textStyle.fontSize), fontScale);
     if (b.textStyle?.highlight) { const hl = TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight); if (hl) base.backgroundColor = hl.bg; }
     if (!b.ranges?.length) {
@@ -1295,6 +1308,24 @@ const JournalScreen = ({ onNavigate, openEntry, onOpenEntryHandled }: { onNaviga
         streak={readingStreak}
         onOpenReading={() => setShowDailyReadingModal(true)}
       />}
+      {!selectMode && planStats && planStats.total > 0 && (
+        <View style={[s.readingCard, { backgroundColor: theme.surface, borderColor: theme.border, marginHorizontal: 16, marginBottom: 8 }]}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+            <Text style={{ fontSize: 15, fontWeight: '700', color: theme.text }}>📚 План чтения</Text>
+            <Text style={{ fontSize: 12, color: planStats.done === planStats.total ? theme.success : theme.textMuted, fontWeight: '600' }}>{planStats.done}/{planStats.total} глав · {Math.round((planStats.done / planStats.total) * 100)}%</Text>
+          </View>
+          <View style={{ height: 6, backgroundColor: theme.borderLight, borderRadius: 3, overflow: 'hidden', marginBottom: 8 }}>
+            <View style={{ height: 6, width: `${Math.round((planStats.done / planStats.total) * 100)}%` as any, backgroundColor: planStats.done === planStats.total ? theme.success : theme.accent, borderRadius: 3 }} />
+          </View>
+          {planStats.nextBook && planStats.nextChap ? (
+            <TouchableOpacity style={[s.readingCardBtn, { backgroundColor: theme.accent }]} onPress={() => onNavigate(planStats.nextBook!, planStats.nextChap!)}>
+              <Text style={[s.readingCardBtnTxt, { color: '#fff' }]}>Продолжить: {planStats.nextBook} {planStats.nextChap} →</Text>
+            </TouchableOpacity>
+          ) : (
+            <Text style={{ color: theme.success, textAlign: 'center', fontWeight: '600', fontSize: 14 }}>✓ План завершён!</Text>
+          )}
+        </View>
+      )}
       {!selectMode && memoriesEntries.length > 0 && <View style={{ marginHorizontal: 16, marginBottom: 8 }}>
         <Text style={{ fontSize: 12, fontWeight: '700', color: theme.textMuted, marginBottom: 6, letterSpacing: 0.5 }}>🕐 В ЭТОТ ДЕНЬ</Text>
         <FlatList
@@ -1571,6 +1602,7 @@ const VersePickerModal = ({ visible, onClose, onSelect }: { visible: boolean; on
 // Calendar Screen
 const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: number) => void }) => {
   const { theme } = useTheme();
+  const insets = useSafeAreaInsets();
   const today = new Date();
   const [month, setMonth] = useState(today.getMonth());
   const [year, setYear] = useState(today.getFullYear());
@@ -1959,7 +1991,7 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
 
       <Modal visible={showAdd} animationType="slide" transparent>
         <View style={s.sheetOverlay}>
-          <View style={s.sheet}>
+          <View style={[s.sheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
             <View style={s.sheetHdr}>
               <Text style={s.sheetTitle}>{pickBook ? `${pickBook.name} — выберите главу` : 'Добавить чтение'}</Text>
               <TouchableOpacity onPress={() => { setShowAdd(false); setPickBook(null); }}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity>
@@ -2019,7 +2051,7 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
 
       <Modal visible={showPlanGen} animationType="slide" transparent>
         <View style={s.sheetOverlay}>
-          <View style={[s.sheet, { maxHeight: '85%' }]}>
+          <View style={[s.sheet, { maxHeight: '85%', paddingBottom: Math.max(insets.bottom, 16) }]}>
             <View style={s.sheetHdr}>
               <Text style={s.sheetTitle}>📖 Генератор плана</Text>
               <TouchableOpacity onPress={() => { setShowPlanGen(false); resetPlanGen(); }}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity>
@@ -2130,7 +2162,7 @@ const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: nu
       {/* Fasting Modal */}
       <Modal visible={showFastModal} animationType="slide" transparent>
         <View style={s.sheetOverlay}>
-          <View style={s.sheet}>
+          <View style={[s.sheet, { paddingBottom: Math.max(insets.bottom, 16) }]}>
             <View style={s.sheetHdr}>
               <Text style={s.sheetTitle}>🙏 {activeFast ? 'Управление постом' : 'Начать пост'}</Text>
               <TouchableOpacity onPress={() => { setShowFastModal(false); setFastNote(''); setEditingFastName(false); }}><Ionicons name="close" size={24} color={C.text} /></TouchableOpacity>
@@ -2297,7 +2329,7 @@ const BibleScreen = ({ navTarget, clearNavTarget, onOpenEntry }: { navTarget: Na
         return (
           <View style={[s.verseItem, { backgroundColor: theme.surface }]}>
             <Text style={[s.vNum, { color: theme.primary }]}>{item.verse}</Text>
-            <Text style={[s.vTxt, { color: theme.text, fontFamily: bibleFontFamily, fontSize: scaledSz(15, fontScale) }]}>{item.text}</Text>
+            <Text style={[s.vTxt, { color: theme.text, fontFamily: bibleFontFamily, fontSize: scaledSz(15, fontScale) }]}>{item.text.charAt(0).toUpperCase() + item.text.slice(1)}</Text>
             {showVerseUsage && usageEntries.length > 0 && (
               <TouchableOpacity style={[s.vUsageBadge, { backgroundColor: verseUsageBadgeColor, opacity: verseUsageBadgeOpacity }]} onPress={() => { setUsageModalVerse(item.id); setUsageModalEntries(usageEntries); }}>
                 <Text style={{ fontSize: 9, color: '#fff', fontWeight: '700' }}>{usageEntries.length}</Text>
@@ -2307,6 +2339,18 @@ const BibleScreen = ({ navTarget, clearNavTarget, onOpenEntry }: { navTarget: Na
           </View>
         );
       }} contentContainerStyle={s.list} />}
+      {book && chap !== null && (
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 10, borderTopWidth: 1, borderTopColor: theme.border, backgroundColor: theme.surface }}>
+          <TouchableOpacity disabled={chap <= 1} onPress={() => setChap(chap - 1)} style={{ opacity: chap <= 1 ? 0.3 : 1, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Ionicons name="chevron-back" size={20} color={theme.primary} />
+            <Text style={{ color: theme.primary, fontSize: 15, fontWeight: '500' }}>Предыдущая</Text>
+          </TouchableOpacity>
+          <TouchableOpacity disabled={chap >= book.chapters} onPress={() => setChap(chap + 1)} style={{ opacity: chap >= book.chapters ? 0.3 : 1, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <Text style={{ color: theme.primary, fontSize: 15, fontWeight: '500' }}>Следующая</Text>
+            <Ionicons name="chevron-forward" size={20} color={theme.primary} />
+          </TouchableOpacity>
+        </View>
+      )}
       <Modal visible={usageModalVerse !== null} transparent animationType="fade">
         <TouchableOpacity style={s.overlay} activeOpacity={1} onPress={() => setUsageModalVerse(null)}>
           <View style={[s.picker, { backgroundColor: theme.surface, width: '90%', maxHeight: '60%' }]}>
@@ -3058,15 +3102,15 @@ const SettingsScreen = () => {
             <Text style={{ fontSize: 12, color: theme.textMuted, width: 40, textAlign: 'right' }}>{Math.round(fontScale * 100)}%</Text>
           </View>
           <Text style={{ fontSize: Math.round(14 * fontScale), color: theme.textSec, marginTop: 10, fontStyle: 'italic' }}>Образец текста</Text>
-          <Text style={{ fontSize: 14, color: theme.textSec, marginBottom: 8, marginTop: 20 }}>Шрифт Библии</Text>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
+          <Text style={{ fontSize: 14, color: theme.textSec, marginBottom: 8, marginTop: 20 }}>Шрифт текста</Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
             {VERSE_FONTS.map(f => (
-              <TouchableOpacity key={f.id} style={[s.statCard, { backgroundColor: theme.surface, borderWidth: 2, borderColor: bibleFont === f.id ? theme.primary : 'transparent', paddingVertical: 12 }]} onPress={() => setBibleFont(f.id)}>
+              <TouchableOpacity key={f.id} style={[s.statCard, { backgroundColor: theme.surface, borderWidth: 2, borderColor: bibleFont === f.id ? theme.primary : 'transparent', paddingVertical: 12, minWidth: 72 }]} onPress={() => setBibleFont(f.id)}>
                 <Text style={{ fontSize: 20, fontFamily: f.family, color: theme.text }}>Аа</Text>
                 <Text style={{ fontSize: 11, color: bibleFont === f.id ? theme.primary : theme.textMuted, marginTop: 4, fontWeight: bibleFont === f.id ? '600' : '400' }}>{f.name}</Text>
               </TouchableOpacity>
             ))}
-          </View>
+          </ScrollView>
           <Text style={{ fontSize: 14, fontFamily: getVFont(bibleFont).family, color: theme.textSec, marginTop: 10, fontStyle: 'italic', lineHeight: 22 }}>"В начале сотворил Бог небо и землю."</Text>
         </View>
 
@@ -3303,7 +3347,7 @@ const SettingsScreen = () => {
           </TouchableOpacity>
         </View>
 
-        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 5.5</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 5.6</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
       </ScrollView>
       {showGraph && <GraphView entries={allEntries} folders={allFolders} onClose={() => setShowGraph(false)} />}
       {showTimePicker && (
