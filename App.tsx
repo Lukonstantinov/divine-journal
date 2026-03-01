@@ -67,6 +67,9 @@ const VERSE_FONTS = [
   { id: 'light', name: 'Тонкий', family: Platform.OS === 'ios' ? 'HelveticaNeue-Light' : 'sans-serif-light' },
   { id: 'condensed', name: 'Узкий', family: Platform.OS === 'ios' ? 'AvenirNextCondensed-Regular' : 'sans-serif-condensed' },
   { id: 'mono', name: 'Моно', family: Platform.OS === 'ios' ? 'Courier New' : 'monospace' },
+  { id: 'palatino', name: 'Палатино', family: Platform.OS === 'ios' ? 'Palatino' : 'serif' },
+  { id: 'baskerville', name: 'Баскервиль', family: Platform.OS === 'ios' ? 'Baskerville' : 'serif' },
+  { id: 'medium', name: 'Средний', family: Platform.OS === 'ios' ? 'HelveticaNeue-Medium' : 'sans-serif-medium' },
 ];
 const HIGHLIGHT_COLORS = [
   { id: 'yellow', bg: '#FFF59D' }, { id: 'green', bg: '#A5D6A7' },
@@ -94,7 +97,7 @@ interface Entry { id: number; title: string; content: string; category: Cat; cre
 interface Reading { id: number; date: string; book: string; chapter: number; completed: boolean; }
 interface Fasting { id: number; start_date: string; end_date: string | null; notes: string; }
 interface Folder { id: number; name: string; color: string; icon: string; sort_order: number; }
-interface NavTarget { book: string; chapter: number; }
+interface NavTarget { book: string; chapter: number; verse?: number; highlightWord?: string; }
 
 interface ReadStats {
   totalReads: number;
@@ -196,7 +199,7 @@ const getBackupDir = (): Directory => {
 };
 
 const collectBackupData = async () => ({
-  version: '5.6',
+  version: '5.7',
   exportDate: new Date().toISOString(),
   entries: await db.getAllAsync('SELECT * FROM entries'),
   bookmarks: await db.getAllAsync('SELECT * FROM bookmarks'),
@@ -433,8 +436,8 @@ const AppContent = () => {
 
   useEffect(() => { initDb().then(() => { setReady(true); tryAutoBackup(); }); }, []);
 
-  const navigateToBible = (book: string, chapter: number) => {
-    setNavTarget({ book, chapter });
+  const navigateToBible = (book: string, chapter: number, verse?: number, highlightWord?: string) => {
+    setNavTarget({ book, chapter, verse, highlightWord });
     setTab('bible');
   };
 
@@ -683,21 +686,22 @@ const VerseFormatModal = ({ visible, onClose, verseData, onSave }: { visible: bo
 // Daily Reading Card
 const DailyReadingCard = ({ isRead, streak, onOpenReading }: { isRead: boolean; streak: number; onOpenReading: () => void }) => {
   const { theme } = useTheme();
-  const dateStr = new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
   return (
-    <View style={[s.readingCard, { backgroundColor: isRead ? '#E8F5E9' : '#FFF8E7', borderColor: isRead ? '#4A7C59' : theme.accent }]}>
-      {streak >= 1 && <View style={[s.readingStreakBadge, { backgroundColor: theme.accentLight }]}><Text style={{ fontSize: 12, color: theme.warning }}>🔥 {streak} дн.</Text></View>}
-      <Text style={[s.readingCardTitle, { color: theme.text }]}>📖 Ежедневное чтение</Text>
-      <Text style={[s.readingCardDate, { color: theme.textMuted }]}>{dateStr}</Text>
-      {isRead ? (
-        <View style={[s.readingCardBtn, { backgroundColor: '#E8F5E9' }]}>
-          <Text style={[s.readingCardBtnTxt, { color: '#4A7C59' }]}>✓ Прочитано сегодня</Text>
-        </View>
-      ) : (
-        <TouchableOpacity style={[s.readingCardBtn, { backgroundColor: theme.accent }]} onPress={onOpenReading}>
-          <Text style={[s.readingCardBtnTxt, { color: '#FFFFFF' }]}>Читать на сегодня →</Text>
-        </TouchableOpacity>
-      )}
+    <View style={[s.readingCard, { backgroundColor: isRead ? '#E8F5E9' : '#FFF8E7', borderColor: isRead ? '#4A7C59' : theme.accent, paddingVertical: 8, paddingHorizontal: 12 }]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+        <Text style={{ fontSize: 15 }}>📖</Text>
+        <Text style={{ flex: 1, fontSize: 14, fontWeight: '600', color: theme.text }}>Ежедневное чтение</Text>
+        {streak >= 1 && <View style={[s.streakBadge, { backgroundColor: theme.accentLight }]}><Text style={{ fontSize: 11, color: theme.warning }}>🔥 {streak}</Text></View>}
+        {isRead ? (
+          <View style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: '#C8E6C9' }}>
+            <Text style={{ fontSize: 12, fontWeight: '600', color: '#4A7C59' }}>✓ Готово</Text>
+          </View>
+        ) : (
+          <TouchableOpacity style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: theme.accent }} onPress={onOpenReading}>
+            <Text style={{ fontSize: 12, fontWeight: '600', color: '#fff' }}>Читать →</Text>
+          </TouchableOpacity>
+        )}
+      </View>
     </View>
   );
 };
@@ -744,7 +748,7 @@ const DailyReadingModal = ({ visible, reading, isRead, onClose, onMarkRead, onSa
             <Text style={[s.drSectionHdr, { color: theme.text }]}>✨ Стих дня</Text>
             <View style={s.drVerseCard}>
               <Text style={[s.drVerseRef, { color: theme.primary }]}>{reading.verseOfDay.reference}</Text>
-              <Text style={[s.drVerseTxt, { color: theme.text }]}>"{reading.verseOfDay.text}"</Text>
+              <Text style={[s.drVerseTxt, { color: theme.text }]}>"{reading.verseOfDay.text.charAt(0).toUpperCase() + reading.verseOfDay.text.slice(1)}"</Text>
               <View style={s.drVerseActions}>
                 <TouchableOpacity style={[s.drActionBtn, { backgroundColor: theme.accentLight }]} onPress={() => onSaveToJournal(reading.verseOfDay.reference, reading.verseOfDay.text, reading.verseOfDay.reference)}>
                   <Text style={[s.drActionBtnTxt, { color: theme.primary }]}>💾 В журнал</Text>
@@ -764,7 +768,7 @@ const DailyReadingModal = ({ visible, reading, isRead, onClose, onMarkRead, onSa
             ) : reading.datePatternVerses.map((v, i) => (
               <View key={i} style={[s.drPatternCard, { backgroundColor: theme.surface }]}>
                 <Text style={[s.drVerseRef, { color: theme.primary, marginBottom: 6 }]}>{v.reference}</Text>
-                <Text style={{ fontSize: 14, color: theme.textSec, lineHeight: 20 }}>{v.text}</Text>
+                <Text style={{ fontSize: 14, color: theme.textSec, lineHeight: 20 }}>{v.text.charAt(0).toUpperCase() + v.text.slice(1)}</Text>
                 <View style={[s.drVerseActions, { marginTop: 8 }]}>
                   <TouchableOpacity style={[s.drActionBtn, { backgroundColor: theme.accentLight }]} onPress={() => onSaveToJournal(v.reference, v.text, v.reference)}>
                     <Text style={[s.drActionBtnTxt, { color: theme.primary }]}>💾 В журнал</Text>
@@ -799,7 +803,7 @@ const DailyReadingModal = ({ visible, reading, isRead, onClose, onMarkRead, onSa
                     {psalm.verses.map(v => (
                       <View key={v.number} style={s.drPsalmVerse}>
                         <Text style={[s.drPsalmVNum, { color: theme.primary }]}>{v.number}</Text>
-                        <Text style={[s.drPsalmVTxt, { color: theme.text, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif' }]}>{v.text}</Text>
+                        <Text style={[s.drPsalmVTxt, { color: theme.text, fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif' }]}>{v.text.charAt(0).toUpperCase() + v.text.slice(1)}</Text>
                       </View>
                     ))}
                   </View>
@@ -821,7 +825,7 @@ const DailyReadingModal = ({ visible, reading, isRead, onClose, onMarkRead, onSa
                   </View>
                   <Text style={[s.drVerseRef, { color: theme.primary }]}>{p.reference}</Text>
                 </View>
-                <Text style={{ fontSize: 14, color: theme.textSec, lineHeight: 20 }}>{p.text}</Text>
+                <Text style={{ fontSize: 14, color: theme.textSec, lineHeight: 20 }}>{p.text.charAt(0).toUpperCase() + p.text.slice(1)}</Text>
                 <View style={[s.drVerseActions, { marginTop: 8 }]}>
                   <TouchableOpacity style={[s.drActionBtn, { backgroundColor: theme.accentLight }]} onPress={() => onSaveToJournal(p.reference, p.text, p.reference)}>
                     <Text style={[s.drActionBtnTxt, { color: theme.primary }]}>💾 В журнал</Text>
@@ -849,7 +853,7 @@ const DailyReadingModal = ({ visible, reading, isRead, onClose, onMarkRead, onSa
 };
 
 // Journal Screen
-const JournalScreen = ({ onNavigate, openEntry, onOpenEntryHandled }: { onNavigate: (book: string, chapter: number) => void; openEntry: { id: number; edit: boolean } | null; onOpenEntryHandled: () => void }) => {
+const JournalScreen = ({ onNavigate, openEntry, onOpenEntryHandled }: { onNavigate: (book: string, chapter: number, verse?: number, highlightWord?: string) => void; openEntry: { id: number; edit: boolean } | null; onOpenEntryHandled: () => void }) => {
   const { theme, bibleFont, fontScale } = useTheme();
   const bibleFontFamily = getVFont(bibleFont).family;
   const [entries, setEntries] = useState<Entry[]>([]);
@@ -1281,7 +1285,7 @@ const JournalScreen = ({ onNavigate, openEntry, onOpenEntryHandled }: { onNaviga
         <TextInput style={[s.searchIn, { color: theme.text, padding: 10, fontSize: 14 }]} value={searchQ} onChangeText={setSearchQ} placeholder="Поиск записей..." placeholderTextColor={theme.textMuted} />
         {searchQ.length > 0 && <TouchableOpacity onPress={() => setSearchQ('')}><Ionicons name="close-circle" size={18} color={theme.textMuted} /></TouchableOpacity>}
       </View>
-      {!selectMode && dailyVerse && <View style={[s.dailyVerseBand, { backgroundColor: theme.revBg, borderColor: theme.accent, borderLeftColor: theme.warning }]}>
+      {!selectMode && dailyVerse && <View style={[s.dailyVerseBand, { backgroundColor: theme.revBg, borderColor: theme.accent, borderLeftColor: theme.warning, paddingVertical: verseExpanded ? 12 : 7 }]}>
         <TouchableOpacity onPress={() => setVerseExpanded(v => !v)} activeOpacity={0.8}>
           <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
@@ -1296,7 +1300,7 @@ const JournalScreen = ({ onNavigate, openEntry, onOpenEntryHandled }: { onNaviga
           </View>
         </TouchableOpacity>
         {verseExpanded && <>
-          <Text style={[s.dailyVerseTxt, { fontFamily: bibleFontFamily, color: theme.text, marginTop: 8 }]}>"{dailyVerse.text}"</Text>
+          <Text style={[s.dailyVerseTxt, { fontFamily: bibleFontFamily, color: theme.text, marginTop: 8 }]}>"{dailyVerse.text.charAt(0).toUpperCase() + dailyVerse.text.slice(1)}"</Text>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
             <Text style={[s.dailyVerseRef, { color: theme.primary }]}>— {dailyVerse.book} {dailyVerse.chapter}:{dailyVerse.verse}</Text>
             <TouchableOpacity onPress={() => onNavigate(dailyVerse.book, dailyVerse.chapter)}><Ionicons name="arrow-forward-circle" size={22} color={theme.primary} /></TouchableOpacity>
@@ -1309,21 +1313,23 @@ const JournalScreen = ({ onNavigate, openEntry, onOpenEntryHandled }: { onNaviga
         onOpenReading={() => setShowDailyReadingModal(true)}
       />}
       {!selectMode && planStats && planStats.total > 0 && (
-        <View style={[s.readingCard, { backgroundColor: theme.surface, borderColor: theme.border, marginHorizontal: 16, marginBottom: 8 }]}>
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-            <Text style={{ fontSize: 15, fontWeight: '700', color: theme.text }}>📚 План чтения</Text>
-            <Text style={{ fontSize: 12, color: planStats.done === planStats.total ? theme.success : theme.textMuted, fontWeight: '600' }}>{planStats.done}/{planStats.total} глав · {Math.round((planStats.done / planStats.total) * 100)}%</Text>
+        <View style={[s.readingCard, { backgroundColor: theme.surface, borderColor: theme.border, marginHorizontal: 16, marginBottom: 8, paddingVertical: 8, paddingHorizontal: 12 }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            <Text style={{ fontSize: 14 }}>📚</Text>
+            <View style={{ flex: 1, gap: 3 }}>
+              <View style={{ height: 6, backgroundColor: theme.borderLight, borderRadius: 3, overflow: 'hidden' }}>
+                <View style={{ height: 6, width: `${Math.round((planStats.done / planStats.total) * 100)}%` as any, backgroundColor: planStats.done === planStats.total ? theme.success : theme.accent, borderRadius: 3 }} />
+              </View>
+              <Text style={{ fontSize: 11, color: planStats.done === planStats.total ? theme.success : theme.textMuted }}>{planStats.done}/{planStats.total} · {Math.round((planStats.done / planStats.total) * 100)}%</Text>
+            </View>
+            {planStats.nextBook && planStats.nextChap ? (
+              <TouchableOpacity style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 10, backgroundColor: theme.accent }} onPress={() => onNavigate(planStats.nextBook!, planStats.nextChap!)}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: '#fff' }}>Далее →</Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={{ fontSize: 12, fontWeight: '600', color: theme.success }}>✓ Готово</Text>
+            )}
           </View>
-          <View style={{ height: 6, backgroundColor: theme.borderLight, borderRadius: 3, overflow: 'hidden', marginBottom: 8 }}>
-            <View style={{ height: 6, width: `${Math.round((planStats.done / planStats.total) * 100)}%` as any, backgroundColor: planStats.done === planStats.total ? theme.success : theme.accent, borderRadius: 3 }} />
-          </View>
-          {planStats.nextBook && planStats.nextChap ? (
-            <TouchableOpacity style={[s.readingCardBtn, { backgroundColor: theme.accent }]} onPress={() => onNavigate(planStats.nextBook!, planStats.nextChap!)}>
-              <Text style={[s.readingCardBtnTxt, { color: '#fff' }]}>Продолжить: {planStats.nextBook} {planStats.nextChap} →</Text>
-            </TouchableOpacity>
-          ) : (
-            <Text style={{ color: theme.success, textAlign: 'center', fontWeight: '600', fontSize: 14 }}>✓ План завершён!</Text>
-          )}
         </View>
       )}
       {!selectMode && memoriesEntries.length > 0 && <View style={{ marginHorizontal: 16, marginBottom: 8 }}>
@@ -1488,7 +1494,7 @@ const JournalScreen = ({ onNavigate, openEntry, onOpenEntryHandled }: { onNaviga
             <Text style={[s.label, { color: theme.textSec }]}>Заголовок</Text>
             <TextInput style={[s.input, { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text }]} value={title} onChangeText={t => { setTitle(t); setDirty(true); }} placeholder="Название..." placeholderTextColor={theme.textMuted} />
             <Text style={s.label}>Содержание</Text>
-            {blocks.map((b, i) => <View key={b.id} onLayout={(e) => { blockPositions.current[b.id] = e.nativeEvent.layout.y; }}>{b.type === 'divider' ? <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 8, gap: 8 }}><View style={{ flex: 1, height: 1, backgroundColor: C.border }} /><View style={{ flexDirection: 'row', gap: 4 }}>{i > 0 && <TouchableOpacity onPress={() => moveBlock(i, -1)}><Ionicons name="arrow-up" size={16} color={C.textMuted} /></TouchableOpacity>}{i < blocks.length - 1 && <TouchableOpacity onPress={() => moveBlock(i, 1)}><Ionicons name="arrow-down" size={16} color={C.textMuted} /></TouchableOpacity>}<TouchableOpacity onPress={() => removeBlock(b.id)}><Ionicons name="close" size={16} color={C.error} /></TouchableOpacity></View></View> : b.type === 'text' ? <View style={b.textStyle?.highlight ? { borderLeftWidth: 4, borderLeftColor: TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight)?.bg, borderRadius: 8, marginBottom: 4, paddingLeft: 4 } : undefined}><View style={{ flexDirection: 'row', alignItems: 'center' }}><View style={{ flex: 1 }}><TextInput style={[s.input, s.textArea, activeId === b.id && s.inputAct, b.textStyle?.fontSize && { fontSize: getFSize(b.textStyle.fontSize) }, b.textStyle?.bold && { fontWeight: 'bold' }, b.textStyle?.italic && { fontStyle: 'italic' }, b.textStyle?.underline && { textDecorationLine: 'underline' as const }, b.textStyle?.highlight && { backgroundColor: TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight)?.bg }]} value={b.content} onChangeText={t => updateBlock(b.id, t)} onSelectionChange={(e) => setSel(e.nativeEvent.selection)} onFocus={() => { setActiveId(b.id); setTStyle(b.textStyle || {}); setSel({start: 0, end: 0}); setTimeout(() => { const y = blockPositions.current[b.id]; if (y !== undefined && scrollRef.current) { scrollRef.current.scrollTo({ y: Math.max(0, y - 100), animated: true }); } }, 150); }} placeholder={i === 0 ? "Начните писать..." : "Продолжайте..."} placeholderTextColor={C.textMuted} multiline scrollEnabled={false} textAlignVertical="top" /></View>{blocks.length > 1 && <View style={{ paddingLeft: 4, gap: 2 }}>{i > 0 && <TouchableOpacity onPress={() => moveBlock(i, -1)}><Ionicons name="chevron-up" size={16} color={C.textMuted} /></TouchableOpacity>}{i < blocks.length - 1 && <TouchableOpacity onPress={() => moveBlock(i, 1)}><Ionicons name="chevron-down" size={16} color={C.textMuted} /></TouchableOpacity>}</View>}</View>{b.ranges && b.ranges.length > 0 && b.content.length > 0 && <View style={{ backgroundColor: theme.surfaceAlt, borderRadius: 8, padding: 10, marginTop: 4, marginBottom: 4 }}><Text style={{ fontSize: 11, color: theme.textMuted, marginBottom: 4 }}>Предпросмотр:</Text>{(() => { const len = b.content.length, pts = new Set<number>([0, len]); b.ranges.forEach(r => { pts.add(Math.max(0, r.start)); pts.add(Math.min(len, r.end)); }); const srt = Array.from(pts).sort((a, c) => a - c); return <Text style={{ fontSize: 14, lineHeight: 22, color: theme.text }}>{srt.slice(0, -1).map((ps, ix) => { const pe = srt[ix + 1]; const rs: any = {}; if (b.textStyle?.bold) rs.fontWeight = 'bold'; if (b.textStyle?.italic) rs.fontStyle = 'italic'; if (b.textStyle?.underline) rs.textDecorationLine = 'underline'; for (const r of (b.ranges || [])) { if (r.start <= ps && r.end >= pe) { if (r.bold) rs.fontWeight = 'bold'; if (r.italic) rs.fontStyle = 'italic'; if (r.underline) rs.textDecorationLine = 'underline'; if (r.highlight) { const hl = TEXT_HIGHLIGHTS.find(h => h.id === r.highlight); if (hl) rs.backgroundColor = hl.bg; } } } return <Text key={ix} style={rs}>{b.content.slice(ps, pe)}</Text>; })}</Text>; })()}</View>}<TouchableOpacity style={s.insertBtn} onPress={() => { setInsertId(b.id); setVpick(true); }}><Ionicons name="add-circle" size={18} color={C.primary} /><Text style={s.insertTxt}>Вставить стихи</Text></TouchableOpacity></View> : <View style={[s.verseEdit, { backgroundColor: getVColor(b.boxColor).bg, borderLeftColor: getVColor(b.boxColor).border }]}>{(() => { try { const d = JSON.parse(b.content) as VerseData; const font = getVFont(d.fontFamily); const ref = d.verseEnd ? `${d.book} ${d.chapter}:${d.verse}-${d.verseEnd}` : `${d.book} ${d.chapter}:${d.verse}`; return <><View style={s.verseEditHdr}><View style={s.verseEditLeft}><Ionicons name="book" size={16} color={getVColor(b.boxColor).border} /><Text style={[s.verseRef, { color: getVColor(b.boxColor).border }]}>{ref}</Text>{d.fontFamily && <Text style={s.verseFontLabel}>{font.name}</Text>}</View><View style={s.verseEditActs}><TouchableOpacity onPress={() => openVerseFormat(b.id)}><Ionicons name="text" size={20} color={getVColor(b.boxColor).border} /></TouchableOpacity><TouchableOpacity onPress={() => setColorPick(b.id)}><Ionicons name="color-palette" size={20} color={getVColor(b.boxColor).border} /></TouchableOpacity><TouchableOpacity onPress={() => removeBlock(b.id)}><Ionicons name="close-circle" size={22} color={C.error} /></TouchableOpacity></View></View><HighlightedVerseText text={d.text} highlights={d.highlights} fontFamily={font.family} baseStyle={s.verseEditTxt} /></>; } catch { return null; } })()}</View>}</View>)}
+            {blocks.map((b, i) => <View key={b.id} onLayout={(e) => { blockPositions.current[b.id] = e.nativeEvent.layout.y; }}>{b.type === 'divider' ? <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 8, gap: 8 }}><View style={{ flex: 1, height: 1, backgroundColor: C.border }} /><View style={{ flexDirection: 'row', gap: 4 }}>{i > 0 && <TouchableOpacity onPress={() => moveBlock(i, -1)}><Ionicons name="arrow-up" size={16} color={C.textMuted} /></TouchableOpacity>}{i < blocks.length - 1 && <TouchableOpacity onPress={() => moveBlock(i, 1)}><Ionicons name="arrow-down" size={16} color={C.textMuted} /></TouchableOpacity>}<TouchableOpacity onPress={() => removeBlock(b.id)}><Ionicons name="close" size={16} color={C.error} /></TouchableOpacity></View></View> : b.type === 'text' ? <View style={b.textStyle?.highlight ? { borderLeftWidth: 4, borderLeftColor: TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight)?.bg, borderRadius: 8, marginBottom: 4, paddingLeft: 4 } : undefined}><View style={{ flexDirection: 'row', alignItems: 'center' }}><View style={{ flex: 1 }}><TextInput style={[s.input, s.textArea, activeId === b.id && s.inputAct, b.textStyle?.fontSize && { fontSize: getFSize(b.textStyle.fontSize) }, b.textStyle?.bold && { fontWeight: 'bold' }, b.textStyle?.italic && { fontStyle: 'italic' }, b.textStyle?.underline && { textDecorationLine: 'underline' as const }, b.textStyle?.highlight && { backgroundColor: TEXT_HIGHLIGHTS.find(h => h.id === b.textStyle?.highlight)?.bg }]} value={b.content} onChangeText={t => updateBlock(b.id, t)} onSelectionChange={(e) => setSel(e.nativeEvent.selection)} onFocus={() => { setActiveId(b.id); setTStyle(b.textStyle || {}); setSel({start: 0, end: 0}); setTimeout(() => { const y = blockPositions.current[b.id]; if (y !== undefined && scrollRef.current) { scrollRef.current.scrollTo({ y: Math.max(0, y - 100), animated: true }); } }, 150); }} placeholder={i === 0 ? "Начните писать..." : "Продолжайте..."} placeholderTextColor={C.textMuted} multiline scrollEnabled={false} textAlignVertical="top" /></View>{blocks.length > 1 && <View style={{ paddingLeft: 4, gap: 2 }}>{i > 0 && <TouchableOpacity onPress={() => moveBlock(i, -1)}><Ionicons name="chevron-up" size={16} color={C.textMuted} /></TouchableOpacity>}{i < blocks.length - 1 && <TouchableOpacity onPress={() => moveBlock(i, 1)}><Ionicons name="chevron-down" size={16} color={C.textMuted} /></TouchableOpacity>}</View>}</View><TouchableOpacity style={s.insertBtn} onPress={() => { setInsertId(b.id); setVpick(true); }}><Ionicons name="add-circle" size={18} color={C.primary} /><Text style={s.insertTxt}>Вставить стихи</Text></TouchableOpacity></View> : <View style={[s.verseEdit, { backgroundColor: getVColor(b.boxColor).bg, borderLeftColor: getVColor(b.boxColor).border }]}>{(() => { try { const d = JSON.parse(b.content) as VerseData; const font = getVFont(d.fontFamily); const ref = d.verseEnd ? `${d.book} ${d.chapter}:${d.verse}-${d.verseEnd}` : `${d.book} ${d.chapter}:${d.verse}`; return <><View style={s.verseEditHdr}><View style={s.verseEditLeft}><Ionicons name="book" size={16} color={getVColor(b.boxColor).border} /><Text style={[s.verseRef, { color: getVColor(b.boxColor).border }]}>{ref}</Text>{d.fontFamily && <Text style={s.verseFontLabel}>{font.name}</Text>}</View><View style={s.verseEditActs}><TouchableOpacity onPress={() => openVerseFormat(b.id)}><Ionicons name="text" size={20} color={getVColor(b.boxColor).border} /></TouchableOpacity><TouchableOpacity onPress={() => setColorPick(b.id)}><Ionicons name="color-palette" size={20} color={getVColor(b.boxColor).border} /></TouchableOpacity><TouchableOpacity onPress={() => removeBlock(b.id)}><Ionicons name="close-circle" size={22} color={C.error} /></TouchableOpacity></View></View><HighlightedVerseText text={d.text} highlights={d.highlights} fontFamily={font.family} baseStyle={s.verseEditTxt} /></>; } catch { return null; } })()}</View>}</View>)}
             <View style={{ height: 200 }} />
           </ScrollView>
           {activeId && keyboardVisible && <RTToolbar style={tStyle} onToggle={toggleStyle} onSize={setFontSize} onHighlight={setHighlight} onDivider={addDivider} />}
@@ -1600,7 +1606,7 @@ const VersePickerModal = ({ visible, onClose, onSelect }: { visible: boolean; on
 };
 
 // Calendar Screen
-const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: number) => void }) => {
+const CalendarScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: number, verse?: number, highlightWord?: string) => void }) => {
   const { theme } = useTheme();
   const insets = useSafeAreaInsets();
   const today = new Date();
@@ -2277,6 +2283,9 @@ const BibleScreen = ({ navTarget, clearNavTarget, onOpenEntry }: { navTarget: Na
   const [verseUsageBadgeColor, setVerseUsageBadgeColor] = useState<string>('#8B4513');
   const [verseUsageBadgeOpacity, setVerseUsageBadgeOpacity] = useState<number>(1.0);
   const [bookUsageMap, setBookUsageMap] = useState<Map<string, number>>(new Map());
+  const [targetVerse, setTargetVerse] = useState<number | null>(null);
+  const [highlightWord, setHighlightWord] = useState<string | null>(null);
+  const verseListRef = useRef<FlatList>(null);
 
   useEffect(() => { (async () => { const r = await db.getAllAsync<{ verse_id: string }>('SELECT verse_id FROM bookmarks'); setBmarks(new Set(r.map(x => x.verse_id))); const su = await db.getFirstAsync<{ value: string }>("SELECT value FROM app_settings WHERE key='show_verse_usage'"); if (su?.value === '1') setShowVerseUsage(true); const bc = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='verse_badge_color'"); if (bc?.value) setVerseUsageBadgeColor(bc.value); const bo = await db.getFirstAsync<{value:string}>("SELECT value FROM app_settings WHERE key='verse_badge_opacity'"); if (bo?.value) setVerseUsageBadgeOpacity(parseFloat(bo.value)); })(); }, []);
 
@@ -2295,10 +2304,26 @@ const BibleScreen = ({ navTarget, clearNavTarget, onOpenEntry }: { navTarget: Na
   useEffect(() => {
     if (navTarget) {
       const b = BIBLE_BOOKS.find(x => x.name === navTarget.book);
-      if (b) { setBook(b); setChap(navTarget.chapter); }
+      if (b) {
+        setBook(b);
+        setChap(navTarget.chapter);
+        setTargetVerse(navTarget.verse ?? null);
+        setHighlightWord(navTarget.highlightWord ?? null);
+      }
       clearNavTarget();
     }
   }, [navTarget, clearNavTarget]);
+
+  useEffect(() => {
+    if (targetVerse !== null && verses.length > 0) {
+      const idx = verses.findIndex(v => v.verse === targetVerse);
+      if (idx !== -1) {
+        setTimeout(() => {
+          verseListRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.3 });
+        }, 300);
+      }
+    }
+  }, [targetVerse, verses]);
 
   const toggleBm = async (id: string) => { if (bmarks.has(id)) { await db.runAsync('DELETE FROM bookmarks WHERE verse_id=?', [id]); bmarks.delete(id); } else { await db.runAsync('INSERT OR IGNORE INTO bookmarks (verse_id) VALUES (?)', [id]); bmarks.add(id); } setBmarks(new Set(bmarks)); };
 
@@ -2315,37 +2340,64 @@ const BibleScreen = ({ navTarget, clearNavTarget, onOpenEntry }: { navTarget: Na
 
   if (!chap) return (
     <View style={[s.screen, { backgroundColor: theme.bg }]}>
-      <View style={s.header}><TouchableOpacity onPress={() => setBook(null)} style={s.backBtn}><Ionicons name="arrow-back" size={24} color={theme.text} /></TouchableOpacity><Text style={[s.headerTxt, { color: theme.text }]}>{book.name}</Text><View style={{ width: 40 }} /></View>
+      <View style={s.header}><TouchableOpacity onPress={() => { setBook(null); setTargetVerse(null); setHighlightWord(null); }} style={s.backBtn}><Ionicons name="arrow-back" size={24} color={theme.text} /></TouchableOpacity><Text style={[s.headerTxt, { color: theme.text }]}>{book.name}</Text><View style={{ width: 40 }} /></View>
       <FlatList key="cg" data={Array.from({ length: book.chapters }, (_, i) => i + 1)} numColumns={5} keyExtractor={i => i.toString()} renderItem={({ item }) => <TouchableOpacity style={[s.chapBtn, { backgroundColor: theme.surface, borderColor: theme.border }]} onPress={() => setChap(item)}><Text style={[s.chapTxt, { color: theme.primary }]}>{item}</Text></TouchableOpacity>} contentContainerStyle={s.chapGrid} />
     </View>
   );
 
   return (
     <View style={[s.screen, { backgroundColor: theme.bg }]}>
-      <View style={s.header}><TouchableOpacity onPress={() => setChap(null)} style={s.backBtn}><Ionicons name="arrow-back" size={24} color={theme.text} /></TouchableOpacity><Text style={[s.headerTxt, { color: theme.text }]}>{book.name} {chap}</Text><View style={{ width: 40 }} /></View>
+      <View style={s.header}><TouchableOpacity onPress={() => { setChap(null); setTargetVerse(null); setHighlightWord(null); }} style={s.backBtn}><Ionicons name="arrow-back" size={24} color={theme.text} /></TouchableOpacity><Text style={[s.headerTxt, { color: theme.text }]}>{book.name} {chap}</Text><View style={{ width: 40 }} /></View>
       {verses.length === 0 ? <View style={s.empty}><Ionicons name="alert-circle-outline" size={48} color={theme.border} /><Text style={[s.emptyTxt, { color: theme.textMuted }]}>Стихи не найдены</Text></View>
-      : <FlatList data={verses} keyExtractor={i => i.id} renderItem={({ item }) => {
-        const usageEntries = showVerseUsage ? (verseUsageMap.get(item.id) || []) : [];
-        return (
-          <View style={[s.verseItem, { backgroundColor: theme.surface }]}>
-            <Text style={[s.vNum, { color: theme.primary }]}>{item.verse}</Text>
-            <Text style={[s.vTxt, { color: theme.text, fontFamily: bibleFontFamily, fontSize: scaledSz(15, fontScale) }]}>{item.text.charAt(0).toUpperCase() + item.text.slice(1)}</Text>
-            {showVerseUsage && usageEntries.length > 0 && (
-              <TouchableOpacity style={[s.vUsageBadge, { backgroundColor: verseUsageBadgeColor, opacity: verseUsageBadgeOpacity }]} onPress={() => { setUsageModalVerse(item.id); setUsageModalEntries(usageEntries); }}>
-                <Text style={{ fontSize: 9, color: '#fff', fontWeight: '700' }}>{usageEntries.length}</Text>
-              </TouchableOpacity>
-            )}
-            <TouchableOpacity onPress={() => toggleBm(item.id)} style={s.bmBtn}><Ionicons name={bmarks.has(item.id) ? 'bookmark' : 'bookmark-outline'} size={20} color={bmarks.has(item.id) ? theme.primary : theme.textMuted} /></TouchableOpacity>
-          </View>
-        );
-      }} contentContainerStyle={s.list} />}
+      : <FlatList
+          ref={verseListRef}
+          data={verses}
+          keyExtractor={i => i.id}
+          getItemLayout={(_data, index) => ({ length: 70, offset: 70 * index, index })}
+          onScrollToIndexFailed={info => { verseListRef.current?.scrollToOffset({ offset: info.averageItemLength * info.index, animated: true }); }}
+          renderItem={({ item }) => {
+            const usageEntries = showVerseUsage ? (verseUsageMap.get(item.id) || []) : [];
+            const isTarget = targetVerse !== null && item.verse === targetVerse;
+            const displayText = item.text.charAt(0).toUpperCase() + item.text.slice(1);
+            const renderVerseText = () => {
+              if (!highlightWord) return <Text style={[s.vTxt, { color: theme.text, fontFamily: bibleFontFamily, fontSize: scaledSz(15, fontScale) }]}>{displayText}</Text>;
+              const lower = displayText.toLowerCase();
+              const lq = highlightWord.toLowerCase();
+              const parts: React.ReactNode[] = [];
+              let last = 0;
+              let pos = lower.indexOf(lq);
+              const baseStyle = [s.vTxt, { color: theme.text, fontFamily: bibleFontFamily, fontSize: scaledSz(15, fontScale) }];
+              while (pos !== -1) {
+                if (pos > last) parts.push(<Text key={`t${last}`} style={baseStyle}>{displayText.slice(last, pos)}</Text>);
+                parts.push(<Text key={`h${pos}`} style={[baseStyle, { backgroundColor: '#FFE082', color: '#5D4037', fontWeight: '700' }]}>{displayText.slice(pos, pos + lq.length)}</Text>);
+                last = pos + lq.length;
+                pos = lower.indexOf(lq, last);
+              }
+              if (last < displayText.length) parts.push(<Text key={`e${last}`} style={baseStyle}>{displayText.slice(last)}</Text>);
+              return <Text style={{ flex: 1 }}>{parts}</Text>;
+            };
+            return (
+              <View style={[s.verseItem, { backgroundColor: isTarget ? (theme.accentLight + '40') : theme.surface }]}>
+                <Text style={[s.vNum, { color: theme.primary }]}>{item.verse}</Text>
+                {renderVerseText()}
+                {showVerseUsage && usageEntries.length > 0 && (
+                  <TouchableOpacity style={[s.vUsageBadge, { backgroundColor: verseUsageBadgeColor, opacity: verseUsageBadgeOpacity }]} onPress={() => { setUsageModalVerse(item.id); setUsageModalEntries(usageEntries); }}>
+                    <Text style={{ fontSize: 9, color: '#fff', fontWeight: '700' }}>{usageEntries.length}</Text>
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity onPress={() => toggleBm(item.id)} style={s.bmBtn}><Ionicons name={bmarks.has(item.id) ? 'bookmark' : 'bookmark-outline'} size={20} color={bmarks.has(item.id) ? theme.primary : theme.textMuted} /></TouchableOpacity>
+              </View>
+            );
+          }}
+          contentContainerStyle={s.list}
+        />}
       {book && chap !== null && (
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingVertical: 10, borderTopWidth: 1, borderTopColor: theme.border, backgroundColor: theme.surface }}>
-          <TouchableOpacity disabled={chap <= 1} onPress={() => setChap(chap - 1)} style={{ opacity: chap <= 1 ? 0.3 : 1, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <TouchableOpacity disabled={chap <= 1} onPress={() => { setChap(chap - 1); setTargetVerse(null); setHighlightWord(null); }} style={{ opacity: chap <= 1 ? 0.3 : 1, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <Ionicons name="chevron-back" size={20} color={theme.primary} />
             <Text style={{ color: theme.primary, fontSize: 15, fontWeight: '500' }}>Предыдущая</Text>
           </TouchableOpacity>
-          <TouchableOpacity disabled={chap >= book.chapters} onPress={() => setChap(chap + 1)} style={{ opacity: chap >= book.chapters ? 0.3 : 1, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+          <TouchableOpacity disabled={chap >= book.chapters} onPress={() => { setChap(chap + 1); setTargetVerse(null); setHighlightWord(null); }} style={{ opacity: chap >= book.chapters ? 0.3 : 1, flexDirection: 'row', alignItems: 'center', gap: 4 }}>
             <Text style={{ color: theme.primary, fontSize: 15, fontWeight: '500' }}>Следующая</Text>
             <Ionicons name="chevron-forward" size={20} color={theme.primary} />
           </TouchableOpacity>
@@ -2379,22 +2431,41 @@ const BibleScreen = ({ navTarget, clearNavTarget, onOpenEntry }: { navTarget: Na
 };
 
 // Search Screen
-const SearchScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: number) => void }) => {
+const SearchScreen = ({ onNavigate }: { onNavigate: (book: string, chapter: number, verse?: number, highlightWord?: string) => void }) => {
   const { theme, bibleFont, fontScale } = useTheme();
   const bibleFontFamily = getVFont(bibleFont).family;
   const [q, setQ] = useState('');
   const [res, setRes] = useState<BibleVerse[]>([]);
   const search = useCallback(() => { if (!q.trim()) { setRes([]); return; } setRes(BIBLE_VERSES.filter(v => v.text.toLowerCase().includes(q.toLowerCase()) || v.book.toLowerCase().includes(q.toLowerCase())).slice(0, 100)); }, [q]);
   useEffect(() => { const t = setTimeout(search, 300); return () => clearTimeout(t); }, [q, search]);
+
+  const renderHighlightedText = (text: string, query: string, baseStyle: any) => {
+    const displayText = text.charAt(0).toUpperCase() + text.slice(1);
+    if (!query.trim()) return <Text style={baseStyle}>{displayText}</Text>;
+    const lower = displayText.toLowerCase();
+    const lq = query.toLowerCase();
+    const parts: React.ReactNode[] = [];
+    let last = 0;
+    let pos = lower.indexOf(lq);
+    while (pos !== -1) {
+      if (pos > last) parts.push(<Text key={`t${last}`} style={baseStyle}>{displayText.slice(last, pos)}</Text>);
+      parts.push(<Text key={`h${pos}`} style={[baseStyle, { backgroundColor: '#FFE082', color: '#5D4037', fontWeight: '700' }]}>{displayText.slice(pos, pos + lq.length)}</Text>);
+      last = pos + lq.length;
+      pos = lower.indexOf(lq, last);
+    }
+    if (last < displayText.length) parts.push(<Text key={`e${last}`} style={baseStyle}>{displayText.slice(last)}</Text>);
+    return <Text>{parts}</Text>;
+  };
+
   return (
     <View style={[s.screen, { backgroundColor: theme.bg }]}>
       <View style={s.header}><Text style={[s.headerTxt, { color: theme.text }]}>🔍 Поиск</Text></View>
       <View style={[s.searchBox, { backgroundColor: theme.surface, borderColor: theme.border }]}><Ionicons name="search" size={20} color={theme.textMuted} /><TextInput style={[s.searchIn, { color: theme.text }]} value={q} onChangeText={setQ} placeholder="Поиск по Библии..." placeholderTextColor={theme.textMuted} />{q.length > 0 && <TouchableOpacity onPress={() => setQ('')}><Ionicons name="close-circle" size={20} color={theme.textMuted} /></TouchableOpacity>}</View>
       {res.length > 0 && <Text style={[s.resCnt, { color: theme.textMuted }]}>Найдено: {res.length}</Text>}
       <FlatList data={res} keyExtractor={i => i.id} renderItem={({ item }) => (
-        <TouchableOpacity style={[s.searchRes, { backgroundColor: theme.surface }]} onPress={() => onNavigate(item.book, item.chapter)}>
+        <TouchableOpacity style={[s.searchRes, { backgroundColor: theme.surface }]} onPress={() => onNavigate(item.book, item.chapter, item.verse, q.trim())}>
           <Text style={[s.searchRef, { color: theme.primary }]}>{item.book} {item.chapter}:{item.verse}</Text>
-          <Text style={[s.searchTxt, { color: theme.textSec, fontFamily: bibleFontFamily, fontSize: scaledSz(14, fontScale) }]}>{item.text}</Text>
+          {renderHighlightedText(item.text, q, [s.searchTxt, { color: theme.textSec, fontFamily: bibleFontFamily, fontSize: scaledSz(14, fontScale) }])}
           <View style={[s.goHint, { borderTopColor: theme.borderLight }]}><Text style={[s.goHintTxt, { color: theme.primary }]}>Открыть в Библии →</Text></View>
         </TouchableOpacity>
       )} contentContainerStyle={s.list} />
@@ -3347,7 +3418,7 @@ const SettingsScreen = () => {
           </TouchableOpacity>
         </View>
 
-        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 5.6</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 5.7</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
       </ScrollView>
       {showGraph && <GraphView entries={allEntries} folders={allFolders} onClose={() => setShowGraph(false)} />}
       {showTimePicker && (
@@ -3583,7 +3654,7 @@ const s = StyleSheet.create({
   // Achievement badge styles
   achieveBadge: { width: (SW - 32 - 28) / 4, alignItems: 'center', padding: 10, borderRadius: 14, borderWidth: 1.5, position: 'relative' },
   // Daily verse collapsible band
-  dailyVerseBand: { marginHorizontal: 16, marginBottom: 8, padding: 12, borderRadius: 12, borderLeftWidth: 4, borderWidth: 1 },
+  dailyVerseBand: { marginHorizontal: 16, marginBottom: 8, paddingHorizontal: 12, paddingVertical: 12, borderRadius: 12, borderLeftWidth: 4, borderWidth: 1 },
   // On This Day memory cards
   memoryCard: { width: 130, padding: 12, borderRadius: 12, borderLeftWidth: 3, elevation: 1, shadowColor: '#000', shadowOpacity: 0.06, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } },
   // Bible verse usage count badge
