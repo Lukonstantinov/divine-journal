@@ -241,7 +241,7 @@ achievements     (id TEXT PK, unlocked_at TEXT, title TEXT, description TEXT)
 - Graph: Force-directed layout (60 iterations) in `computeGraph()`, rendered with react-native-svg
 
 ### Version Management
-- **Current version: v5.5**
+- **Current version: v5.6**
 - **On every code change built into an APK, bump the version (patch: 5.4 → 5.5 etc.)**
 - Update in **3 places**:
   1. `App.tsx` line ~195: `version: '5.X'` inside `collectBackupData()`
@@ -308,6 +308,7 @@ See `ENHANCEMENT_PLAN.md` for the full roadmap with code-level implementation de
 - **v5.3**: Bible verse usage badges, daily verse collapsible, note color tagging, collapsible sections, On This Day memories
 - **v5.4**: Badge moved to right-side of verse row, badge color/opacity customization in Settings, entry card tap=viewer/long-press=editor, card window-border styling
 - **v5.5**: Note color gradient backgrounds (replace dot with transparent card wash), fasting dashed borders, uniform category badges, multi-select batch folder move, note color opacity + fasting border color settings
+- **v5.6**: Bottom sheet SafeArea fix, Bible prev/next chapter navigation, verse capitalization + no numbers in multi-verse notes, expanded font picker (7 fonts) applied to notes, reading plan progress card on Journal page
 
 ### Planned
 - **Feature 2**: "On This Day" — past years memories slider
