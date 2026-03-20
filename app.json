@@ -12,12 +12,10 @@
       "resizeMode": "contain",
       "backgroundColor": "#FDFBF7"
     },
-    "android": {
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#FDFBF7"
-      },
-      "package": "com.lukkonas.divinejournal"
+    "ios": {
+      "bundleIdentifier": "com.lukkonas.divinejournal",
+      "supportsTablet": false,
+      "icon": "./assets/icon.png"
     },
     "plugins": [
       "expo-sqlite",

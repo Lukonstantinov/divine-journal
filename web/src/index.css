@@ -1,0 +1,76 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollable areas */
+.scroll-area {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Hide scrollbars visually but keep functionality */
+.scroll-area::-webkit-scrollbar {
+  display: none;
+}
+
+/* Status bar safe area */
+.pt-safe {
+  padding-top: var(--safe-top);
+}
+
+.pb-safe {
+  padding-bottom: var(--safe-bottom);
+}
+
+/* Tab bar height accounts for safe area */
+.tab-bar-height {
+  height: calc(56px + var(--safe-bottom));
+  padding-bottom: var(--safe-bottom);
+}
+
+/* Content area leaves room for tab bar */
+.content-area {
+  height: calc(100% - 56px - var(--safe-bottom));
+}
+
+/* Smooth transitions */
+.screen-transition {
+  transition: opacity 0.15s ease;
+}
+
+/* Input styles */
+textarea, input {
+  font-family: 'Inter', sans-serif;
+  outline: none;
+  -webkit-appearance: none;
+  border-radius: 0;
+}
+
+/* Modal backdrop */
+.modal-backdrop {
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
