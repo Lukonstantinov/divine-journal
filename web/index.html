@@ -2,14 +2,16 @@
 <html lang="ru">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 
     <!-- PWA / iOS Home Screen -->
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="Дневник" />
-    <meta name="theme-color" content="#8B4513" />
+    <meta name="theme-color" content="#8B4513" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1A0F0A" media="(prefers-color-scheme: dark)" />
+    <meta name="format-detection" content="telephone=no" />
 
     <!-- Icons -->
     <link rel="icon" type="image/png" sizes="192x192" href="/divine-journal/icons/icon-192.png" />
@@ -17,7 +19,7 @@
     <link rel="apple-touch-icon" sizes="152x152" href="/divine-journal/icons/icon-152.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/divine-journal/icons/icon-180.png" />
 
-    <!-- Splash screens for iOS (optional, nice to have) -->
+    <!-- iOS Splash screens -->
     <link rel="apple-touch-startup-image" href="/divine-journal/icons/splash.png" />
 
     <!-- Manifest -->
@@ -25,13 +27,19 @@
 
     <title>Духовный Дневник</title>
 
-    <!-- Fonts -->
+    <!-- Fonts — preconnect + preload for faster rendering -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Lora:ital,wght@0,400;0,600;1,400&display=swap"
       rel="stylesheet"
     />
+
+    <style>
+      /* Prevent FOUC — show bg color immediately */
+      html, body { background: #FDF6EE; margin: 0; }
+      #root { min-height: 100dvh; min-height: -webkit-fill-available; }
+    </style>
   </head>
   <body>
     <div id="root"></div>

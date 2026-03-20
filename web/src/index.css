@@ -5,15 +5,31 @@
 :root {
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  /* Visual viewport height — updated by JS for keyboard avoidance */
+  --vh: 1vh;
+  --app-height: 100vh;
 }
 
+/* iOS: Prevent tap highlight, callout, text selection on non-content */
 * {
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
 }
 
-html, body, #root {
+html {
+  /* Prevent iOS rubber-band scrolling on the document */
+  overflow: hidden;
+  position: fixed;
+  width: 100%;
   height: 100%;
+}
+
+html, body, #root {
+  /* Use dynamic viewport height for iOS Safari toolbar */
+  height: 100dvh;
+  height: var(--app-height, 100dvh);
   overflow: hidden;
   overscroll-behavior: none;
 }
@@ -22,6 +38,12 @@ body {
   margin: 0;
   font-family: 'Inter', sans-serif;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Prevent pull-to-refresh in standalone mode */
+  overscroll-behavior-y: none;
+  /* Prevent iOS text size adjust */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 /* Scrollable areas */
@@ -34,6 +56,9 @@ body {
 /* Hide scrollbars visually but keep functionality */
 .scroll-area::-webkit-scrollbar {
   display: none;
+}
+.scroll-area {
+  scrollbar-width: none;
 }
 
 /* Status bar safe area */
@@ -61,16 +86,70 @@ body {
   transition: opacity 0.15s ease;
 }
 
-/* Input styles */
+/* Input styles — 16px minimum prevents iOS auto-zoom on focus */
 textarea, input {
   font-family: 'Inter', sans-serif;
+  font-size: 16px;
   outline: none;
   -webkit-appearance: none;
+  appearance: none;
   border-radius: 0;
+}
+
+/* iOS: prevent zoom on select elements too */
+select {
+  font-size: 16px;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 /* Modal backdrop */
 .modal-backdrop {
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
+}
+
+/* iOS standalone: modal fix — use transform instead of position:fixed when possible */
+.ios-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  /* Force new stacking context for iOS */
+  -webkit-transform: translateZ(0);
+  transform: translateZ(0);
+}
+
+/* Prevent text selection on UI chrome, allow on content */
+button, [role="button"], .no-select {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.allow-select {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* iOS standalone mode specific styles */
+@media all and (display-mode: standalone) {
+  /* Ensure full height in standalone */
+  html, body, #root {
+    height: 100%;
+  }
+}
+
+/* Active state for touch — faster feedback than :active */
+.touch-feedback {
+  transition: opacity 0.1s ease;
+}
+.touch-feedback:active {
+  opacity: 0.7;
+}
+
+/* iOS: fix for fixed position elements when keyboard is open */
+.keyboard-open .ios-modal {
+  position: absolute;
+  height: var(--app-height, 100dvh);
 }

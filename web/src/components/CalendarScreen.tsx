@@ -160,8 +160,8 @@ export default function CalendarScreen({ navigateToBible }: Props) {
             {noteEditing ? (
               <div>
                 <textarea
-                  className="w-full bg-transparent resize-none leading-relaxed"
-                  style={{ fontSize: fs(14), color: text, minHeight: 80 }}
+                  className="w-full bg-transparent resize-none leading-relaxed allow-select"
+                  style={{ fontSize: Math.max(16, fs(14)), color: text, minHeight: 80 }}
                   value={dailyNote}
                   onChange={e => setDailyNote(e.target.value)}
                   autoFocus
