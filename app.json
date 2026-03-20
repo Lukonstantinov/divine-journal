@@ -15,7 +15,10 @@
     "ios": {
       "bundleIdentifier": "com.lukkonas.divinejournal",
       "supportsTablet": false,
-      "icon": "./assets/icon.png"
+      "icon": "./assets/icon.png",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "plugins": [
       "expo-sqlite",

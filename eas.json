@@ -1,9 +1,19 @@
 {
+  "cli": {
+    "appVersionSource": "local"
+  },
   "build": {
     "preview": {
       "ios": {
-        "simulator": false,
+        "simulator": true,
         "buildConfiguration": "Release"
+      }
+    },
+    "device": {
+      "ios": {
+        "simulator": false,
+        "buildConfiguration": "Release",
+        "credentialsSource": "remote"
       }
     },
     "simulator": {
