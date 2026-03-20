@@ -59,6 +59,13 @@ export interface Achievement {
   description: string
 }
 
+export interface DailyReadingHistory {
+  id?: number
+  date: string
+  completed: boolean
+  verse_id: string
+}
+
 class DivineJournalDB extends Dexie {
   entries!: Table<Entry>
   bookmarks!: Table<Bookmark>
@@ -68,6 +75,7 @@ class DivineJournalDB extends Dexie {
   folders!: Table<Folder>
   app_settings!: Table<AppSetting>
   achievements!: Table<Achievement>
+  daily_reading_history!: Table<DailyReadingHistory>
 
   constructor() {
     super('divine_journal')
@@ -80,6 +88,17 @@ class DivineJournalDB extends Dexie {
       folders: '++id, sort_order',
       app_settings: '&key',
       achievements: '&id',
+    })
+    this.version(2).stores({
+      entries: '++id, category, folder_id, created_at',
+      bookmarks: '++id, &verse_id, created_at',
+      reading_plan: '++id, date, [date+book+chapter]',
+      daily_notes: '++id, &date',
+      fasting: '++id, start_date, end_date',
+      folders: '++id, sort_order',
+      app_settings: '&key',
+      achievements: '&id',
+      daily_reading_history: '++id, &date',
     })
   }
 }

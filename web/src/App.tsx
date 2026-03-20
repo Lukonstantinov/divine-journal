@@ -5,6 +5,7 @@ import TabBar from './components/TabBar'
 import JournalScreen from './components/JournalScreen'
 import BibleScreen from './components/BibleScreen'
 import CalendarScreen from './components/CalendarScreen'
+import SearchScreen from './components/SearchScreen'
 import SettingsScreen from './components/SettingsScreen'
 
 interface ThemeCtx {
@@ -15,6 +16,16 @@ interface ThemeCtx {
   setFontScale: (s: number) => void
   bibleFont: string
   setBibleFont: (f: string) => void
+  noteOpacity: number
+  setNoteOpacity: (v: number) => void
+  fastingBorderColor: string
+  setFastingBorderColor: (v: string) => void
+  showVerseUsage: boolean
+  setShowVerseUsage: (v: boolean) => void
+  badgeColor: string
+  setBadgeColor: (v: string) => void
+  badgeOpacity: number
+  setBadgeOpacity: (v: number) => void
 }
 
 export const ThemeContext = createContext<ThemeCtx>({
@@ -25,6 +36,16 @@ export const ThemeContext = createContext<ThemeCtx>({
   setFontScale: () => {},
   bibleFont: 'serif',
   setBibleFont: () => {},
+  noteOpacity: 0.10,
+  setNoteOpacity: () => {},
+  fastingBorderColor: '#9C27B0',
+  setFastingBorderColor: () => {},
+  showVerseUsage: false,
+  setShowVerseUsage: () => {},
+  badgeColor: '#8B4513',
+  setBadgeColor: () => {},
+  badgeOpacity: 1,
+  setBadgeOpacity: () => {},
 })
 
 export const useTheme = () => useContext(ThemeContext)
@@ -33,12 +54,18 @@ export interface NavTarget {
   book: string
   chapter: number
   verse?: number
+  highlightTerm?: string
 }
 
 export default function App() {
   const [themeId, setThemeIdState] = useState<ThemeId>('light')
   const [fontScale, setFontScaleState] = useState(1)
   const [bibleFont, setBibleFontState] = useState('serif')
+  const [noteOpacity, setNoteOpacityState] = useState(0.10)
+  const [fastingBorderColor, setFastingBorderColorState] = useState('#9C27B0')
+  const [showVerseUsage, setShowVerseUsageState] = useState(false)
+  const [badgeColor, setBadgeColorState] = useState('#8B4513')
+  const [badgeOpacity, setBadgeOpacityState] = useState(1)
   const [tab, setTab] = useState<Tab>('journal')
   const [navTarget, setNavTarget] = useState<NavTarget | null>(null)
   const [ready, setReady] = useState(false)
@@ -49,26 +76,32 @@ export default function App() {
       getSetting('theme', 'light'),
       getSetting('fontScale', '1'),
       getSetting('bibleFont', 'serif'),
-    ]).then(([t, fs, bf]) => {
+      getSetting('note_color_opacity', '0.10'),
+      getSetting('fasting_border_color', '#9C27B0'),
+      getSetting('show_verse_usage', '0'),
+      getSetting('verse_badge_color', '#8B4513'),
+      getSetting('verse_badge_opacity', '1'),
+    ]).then(([t, fs, bf, nop, fbc, svu, vbc, vbo]) => {
       setThemeIdState(t as ThemeId)
       setFontScaleState(parseFloat(fs) || 1)
       setBibleFontState(bf)
+      setNoteOpacityState(parseFloat(nop) || 0.10)
+      setFastingBorderColorState(fbc || '#9C27B0')
+      setShowVerseUsageState(svu === '1')
+      setBadgeColorState(vbc || '#8B4513')
+      setBadgeOpacityState(parseFloat(vbo) || 1)
       setReady(true)
     })
   }, [])
 
-  const setThemeId = (id: ThemeId) => {
-    setThemeIdState(id)
-    setSetting('theme', id)
-  }
-  const setFontScale = (s: number) => {
-    setFontScaleState(s)
-    setSetting('fontScale', String(s))
-  }
-  const setBibleFont = (f: string) => {
-    setBibleFontState(f)
-    setSetting('bibleFont', f)
-  }
+  const setThemeId = (id: ThemeId) => { setThemeIdState(id); setSetting('theme', id) }
+  const setFontScale = (s: number) => { setFontScaleState(s); setSetting('fontScale', String(s)) }
+  const setBibleFont = (f: string) => { setBibleFontState(f); setSetting('bibleFont', f) }
+  const setNoteOpacity = (v: number) => { setNoteOpacityState(v); setSetting('note_color_opacity', String(v)) }
+  const setFastingBorderColor = (v: string) => { setFastingBorderColorState(v); setSetting('fasting_border_color', v) }
+  const setShowVerseUsage = (v: boolean) => { setShowVerseUsageState(v); setSetting('show_verse_usage', v ? '1' : '0') }
+  const setBadgeColor = (v: string) => { setBadgeColorState(v); setSetting('verse_badge_color', v) }
+  const setBadgeOpacity = (v: number) => { setBadgeOpacityState(v); setSetting('verse_badge_opacity', String(v)) }
 
   const navigateToBible = useCallback((target: NavTarget) => {
     setNavTarget(target)
@@ -107,8 +140,19 @@ export default function App() {
     )
   }
 
+  const ctx: ThemeCtx = {
+    theme, themeId, setThemeId,
+    fontScale, setFontScale,
+    bibleFont, setBibleFont,
+    noteOpacity, setNoteOpacity,
+    fastingBorderColor, setFastingBorderColor,
+    showVerseUsage, setShowVerseUsage,
+    badgeColor, setBadgeColor,
+    badgeOpacity, setBadgeOpacity,
+  }
+
   return (
-    <ThemeContext.Provider value={{ theme, themeId, setThemeId, fontScale, setFontScale, bibleFont, setBibleFont }}>
+    <ThemeContext.Provider value={ctx}>
       <div
         className="flex flex-col select-none"
         style={{ background: theme.bg, color: theme.text, height: 'var(--app-height, 100dvh)' }}
@@ -138,6 +182,7 @@ export default function App() {
           {tab === 'journal' && <JournalScreen navigateToBible={navigateToBible} />}
           {tab === 'bible' && <BibleScreen navTarget={navTarget} clearNavTarget={() => setNavTarget(null)} />}
           {tab === 'calendar' && <CalendarScreen navigateToBible={navigateToBible} />}
+          {tab === 'search' && <SearchScreen navigateToBible={navigateToBible} />}
           {tab === 'settings' && <SettingsScreen />}
         </div>
 
