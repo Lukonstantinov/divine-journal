@@ -211,10 +211,10 @@ export default function JournalScreen({ navigateToBible }: Props) {
 
       {/* Editor Modal */}
       {showEditor && (
-        <div className="fixed inset-0 z-50 flex flex-col modal-backdrop" style={{ background: 'rgba(0,0,0,0.5)' }}>
+        <div className="ios-modal z-50 flex flex-col modal-backdrop" style={{ background: 'rgba(0,0,0,0.5)' }}>
           <div
             className="flex flex-col mt-auto rounded-t-2xl overflow-hidden"
-            style={{ background: bg, maxHeight: '92vh' }}
+            style={{ background: bg, maxHeight: 'calc(var(--app-height, 100dvh) * 0.92)' }}
           >
             {/* Editor header */}
             <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0" style={{ borderColor: border, background: card }}>
@@ -233,7 +233,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
               {/* Title */}
               <input
                 className="w-full font-semibold bg-transparent border-b pb-1"
-                style={{ fontSize: fs(16), color: text, borderColor: border }}
+                style={{ fontSize: Math.max(16, fs(16)), color: text, borderColor: border }}
                 placeholder="Заголовок (необязательно)"
                 value={edTitle}
                 onChange={e => setEdTitle(e.target.value)}
@@ -295,8 +295,8 @@ export default function JournalScreen({ navigateToBible }: Props) {
                   {block.type === 'text' && (
                     <textarea
                       ref={idx === edBlocks.length - 1 ? textareaRef : undefined}
-                      className="w-full bg-transparent resize-none leading-relaxed"
-                      style={{ fontSize: fs(15), color: text, minHeight: 120 }}
+                      className="w-full bg-transparent resize-none leading-relaxed allow-select"
+                      style={{ fontSize: Math.max(16, fs(15)), color: text, minHeight: 120 }}
                       placeholder="Напишите здесь..."
                       value={block.content}
                       onChange={e => updateBlock(block.id, e.target.value)}
@@ -320,10 +320,10 @@ export default function JournalScreen({ navigateToBible }: Props) {
 
       {/* Viewer Modal */}
       {viewing && (
-        <div className="fixed inset-0 z-50 flex flex-col modal-backdrop" style={{ background: 'rgba(0,0,0,0.5)' }}>
+        <div className="ios-modal z-50 flex flex-col modal-backdrop" style={{ background: 'rgba(0,0,0,0.5)' }}>
           <div
             className="flex flex-col mt-auto rounded-t-2xl overflow-hidden"
-            style={{ background: bg, maxHeight: '92vh' }}
+            style={{ background: bg, maxHeight: 'calc(var(--app-height, 100dvh) * 0.92)' }}
           >
             <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0" style={{ borderColor: border, background: card }}>
               <button onClick={() => setViewing(null)} className="active:opacity-70">
@@ -336,7 +336,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
                 <Edit3 size={18} color={primary} />
               </button>
             </div>
-            <div className="flex-1 scroll-area p-4">
+            <div className="flex-1 scroll-area p-4 allow-select">
               <div className="flex items-center gap-2 mb-3">
                 <span
                   className="text-xs px-2 py-0.5 rounded-full font-medium"

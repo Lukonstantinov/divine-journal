@@ -227,7 +227,7 @@ export default function BibleScreen({ navTarget, clearNavTarget }: Props) {
                     {v.verse}
                   </span>
                   <p
-                    className="flex-1 leading-relaxed"
+                    className="flex-1 leading-relaxed allow-select"
                     style={{ fontSize: fs(15), color: text, fontFamily: bibleFontFamily }}
                   >
                     {v.text}
