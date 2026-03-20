@@ -1,4 +1,4 @@
-export type Tab = 'journal' | 'bible' | 'calendar' | 'settings'
+export type Tab = 'journal' | 'bible' | 'calendar' | 'search' | 'settings'
 
 export type ThemeId = 'light' | 'dark' | 'sepia'
 

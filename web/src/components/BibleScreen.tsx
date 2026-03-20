@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useTheme, NavTarget } from '../App'
 import { BIBLE_BOOKS, BIBLE_VERSES } from '../data/BibleVerses'
-import { db } from '../db'
-import { ChevronLeft, ChevronRight, Bookmark, BookmarkCheck } from 'lucide-react'
+import { db, Entry } from '../db'
+import { parseBlocks } from '../types'
+import { ChevronLeft, ChevronRight, Bookmark, BookmarkCheck, X } from 'lucide-react'
 
 interface Props {
   navTarget: NavTarget | null
@@ -11,8 +12,21 @@ interface Props {
 
 type View = 'books' | 'chapters' | 'verses'
 
+const BIBLE_FONT_MAP: Record<string, string> = {
+  serif: 'Georgia, Cambria, serif',
+  sans: 'Inter, sans-serif',
+  mono: 'JetBrains Mono, monospace',
+  lora: 'Lora, Georgia, serif',
+  palatino: 'Palatino Linotype, Palatino, serif',
+  times: 'Times New Roman, Times, serif',
+  baskerville: 'Baskerville, Georgia, serif',
+  roboto: 'Roboto, Inter, sans-serif',
+  light: 'Helvetica Neue, Helvetica, sans-serif',
+  condensed: 'Arial Narrow, Arial, sans-serif',
+}
+
 export default function BibleScreen({ navTarget, clearNavTarget }: Props) {
-  const { theme, fontScale, bibleFont } = useTheme()
+  const { theme, fontScale, bibleFont, showVerseUsage, badgeColor, badgeOpacity } = useTheme()
   const fs = (base: number) => Math.round(base * fontScale)
 
   const [view, setView] = useState<View>('books')
@@ -21,6 +35,9 @@ export default function BibleScreen({ navTarget, clearNavTarget }: Props) {
   const [selectedChapter, setSelectedChapter] = useState<number | null>(null)
   const [bookmarks, setBookmarks] = useState<Set<string>>(new Set())
   const [scrollToVerse, setScrollToVerse] = useState<number | null>(null)
+  const [highlightTerm, setHighlightTerm] = useState<string | null>(null)
+  const [verseUsageMap, setVerseUsageMap] = useState<Record<string, Entry[]>>({})
+  const [usageModalVerseId, setUsageModalVerseId] = useState<string | null>(null)
   const verseRefs = useRef<Record<number, HTMLDivElement | null>>({})
   const listRef = useRef<HTMLDivElement>(null)
 
@@ -29,7 +46,38 @@ export default function BibleScreen({ navTarget, clearNavTarget }: Props) {
     setBookmarks(new Set(bms.map(b => b.verse_id)))
   }
 
-  useEffect(() => { loadBookmarks() }, [])
+  const buildVerseUsageMap = async () => {
+    const entries = await db.entries.toArray()
+    const map: Record<string, Entry[]> = {}
+    for (const entry of entries) {
+      try {
+        const verses: Array<{ book: string; chapter: number; verse: number }> = JSON.parse(entry.linked_verses || '[]')
+        for (const v of verses) {
+          const key = `${v.book}.${v.chapter}.${v.verse}`
+          if (!map[key]) map[key] = []
+          map[key].push(entry)
+        }
+        // Also check verse blocks in content
+        const blocks = parseBlocks(entry.content)
+        for (const b of blocks) {
+          if (b.type === 'verse') {
+            try {
+              const vd = JSON.parse(b.content)
+              const key = `${vd.book}.${vd.chapter}.${vd.verse}`
+              if (!map[key]) map[key] = []
+              if (!map[key].find(e => e.id === entry.id)) map[key].push(entry)
+            } catch {}
+          }
+        }
+      } catch {}
+    }
+    setVerseUsageMap(map)
+  }
+
+  useEffect(() => {
+    loadBookmarks()
+    buildVerseUsageMap()
+  }, [])
 
   // Handle navigation from outside
   useEffect(() => {
@@ -38,6 +86,8 @@ export default function BibleScreen({ navTarget, clearNavTarget }: Props) {
     setSelectedChapter(navTarget.chapter)
     setView('verses')
     if (navTarget.verse) setScrollToVerse(navTarget.verse)
+    if (navTarget.highlightTerm) setHighlightTerm(navTarget.highlightTerm)
+    else setHighlightTerm(null)
     clearNavTarget()
   }, [navTarget, clearNavTarget])
 
@@ -79,7 +129,6 @@ export default function BibleScreen({ navTarget, clearNavTarget }: Props) {
       setSelectedChapter(selectedChapter + 1)
       listRef.current?.scrollTo(0, 0)
     } else {
-      // next book
       const idx = BIBLE_BOOKS.findIndex(b => b.name === selectedBook)
       if (idx < BIBLE_BOOKS.length - 1) {
         setSelectedBook(BIBLE_BOOKS[idx + 1].name)
@@ -105,13 +154,24 @@ export default function BibleScreen({ navTarget, clearNavTarget }: Props) {
     }
   }
 
-  const bibleFontFamily = {
-    serif: 'Georgia, Cambria, serif',
-    sans: 'Inter, sans-serif',
-    mono: 'JetBrains Mono, monospace',
-    lora: 'Lora, Georgia, serif',
-    palatino: 'Palatino Linotype, Palatino, serif',
-  }[bibleFont] ?? 'Georgia, serif'
+  const highlightVerseText = (text: string): React.ReactNode => {
+    if (!highlightTerm) return text
+    const q = highlightTerm.toLowerCase()
+    const idx = text.toLowerCase().indexOf(q)
+    if (idx === -1) return text
+    return (
+      <>
+        {text.slice(0, idx)}
+        <mark style={{ background: '#ffeb3b', color: '#000', borderRadius: 2, padding: '0 1px' }}>
+          {text.slice(idx, idx + q.length)}
+        </mark>
+        {text.slice(idx + q.length)}
+      </>
+    )
+  }
+
+  const bibleFontFamily = BIBLE_FONT_MAP[bibleFont] ?? 'Georgia, serif'
+  const usageEntries = usageModalVerseId ? (verseUsageMap[usageModalVerseId] ?? []) : []
 
   const bg = theme.bg
   const card = theme.card
@@ -129,7 +189,7 @@ export default function BibleScreen({ navTarget, clearNavTarget }: Props) {
             <button
               className="active:opacity-70 mr-1"
               onClick={() => {
-                if (view === 'verses') setView('chapters')
+                if (view === 'verses') { setView('chapters'); setHighlightTerm(null) }
                 else if (view === 'chapters') setView('books')
               }}
             >
@@ -166,20 +226,36 @@ export default function BibleScreen({ navTarget, clearNavTarget }: Props) {
       {/* Books list */}
       {view === 'books' && (
         <div className="flex-1 scroll-area">
-          {filteredBooks.map(book => (
-            <button
-              key={book.name}
-              className="w-full flex items-center justify-between px-4 py-3 border-b active:opacity-70"
-              style={{ borderColor: border }}
-              onClick={() => { setSelectedBook(book.name); setView('chapters') }}
-            >
-              <div className="text-left">
-                <p style={{ fontSize: fs(15), color: text, fontWeight: 500 }}>{book.name}</p>
-                <p style={{ fontSize: fs(12), color: sub }}>{book.chapters} гл.</p>
-              </div>
-              <ChevronRight size={16} color={sub} />
-            </button>
-          ))}
+          {filteredBooks.map(book => {
+            // Count entries referencing any verse in this book
+            const bookUsageCount = showVerseUsage
+              ? Object.entries(verseUsageMap).filter(([k]) => k.startsWith(book.name + '.')).reduce((s, [, v]) => s + v.length, 0)
+              : 0
+            return (
+              <button
+                key={book.name}
+                className="w-full flex items-center justify-between px-4 py-3 border-b active:opacity-70"
+                style={{ borderColor: border }}
+                onClick={() => { setSelectedBook(book.name); setView('chapters') }}
+              >
+                <div className="text-left">
+                  <p style={{ fontSize: fs(15), color: text, fontWeight: 500 }}>{book.name}</p>
+                  <p style={{ fontSize: fs(12), color: sub }}>{book.chapters} гл.</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {showVerseUsage && bookUsageCount > 0 && (
+                    <span
+                      className="text-xs font-bold px-1.5 py-0.5 rounded-full"
+                      style={{ background: badgeColor + Math.round(badgeOpacity * 255).toString(16).padStart(2, '0'), color: '#fff', fontSize: fs(10) }}
+                    >
+                      {bookUsageCount}
+                    </span>
+                  )}
+                  <ChevronRight size={16} color={sub} />
+                </div>
+              </button>
+            )
+          })}
         </div>
       )}
 
@@ -213,12 +289,20 @@ export default function BibleScreen({ navTarget, clearNavTarget }: Props) {
             {verses.map(v => {
               const verseId = v.id
               const bookmarked = bookmarks.has(verseId)
+              const usageKey = `${v.book}.${v.chapter}.${v.verse}`
+              const usageCount = showVerseUsage ? (verseUsageMap[usageKey]?.length ?? 0) : 0
+              const isHighlighted = highlightTerm && v.text.toLowerCase().includes(highlightTerm.toLowerCase())
               return (
                 <div
                   key={v.verse}
                   ref={el => { verseRefs.current[v.verse] = el }}
                   className="flex gap-2 py-1.5 border-b"
-                  style={{ borderColor: border + '60' }}
+                  style={{
+                    borderColor: border + '60',
+                    background: isHighlighted ? '#ffeb3b22' : 'transparent',
+                    borderRadius: isHighlighted ? 6 : 0,
+                    marginBottom: isHighlighted ? 2 : 0,
+                  }}
                 >
                   <span
                     className="flex-shrink-0 font-semibold mt-0.5"
@@ -230,17 +314,32 @@ export default function BibleScreen({ navTarget, clearNavTarget }: Props) {
                     className="flex-1 leading-relaxed allow-select"
                     style={{ fontSize: fs(15), color: text, fontFamily: bibleFontFamily }}
                   >
-                    {v.text}
+                    {highlightVerseText(v.text)}
                   </p>
-                  <button
-                    className="flex-shrink-0 mt-0.5 active:opacity-70"
-                    onClick={() => toggleBookmark(verseId)}
-                  >
-                    {bookmarked
-                      ? <BookmarkCheck size={16} color={primary} />
-                      : <Bookmark size={16} color={border} />
-                    }
-                  </button>
+                  <div className="flex flex-col items-center gap-1 flex-shrink-0">
+                    {usageCount > 0 && (
+                      <button
+                        onClick={() => setUsageModalVerseId(usageKey)}
+                        className="active:opacity-70"
+                      >
+                        <span
+                          className="text-xs font-bold px-1.5 py-0.5 rounded-full"
+                          style={{ background: badgeColor, color: '#fff', opacity: badgeOpacity, fontSize: fs(10) }}
+                        >
+                          {usageCount}
+                        </span>
+                      </button>
+                    )}
+                    <button
+                      className="flex-shrink-0 mt-0.5 active:opacity-70"
+                      onClick={() => toggleBookmark(verseId)}
+                    >
+                      {bookmarked
+                        ? <BookmarkCheck size={16} color={primary} />
+                        : <Bookmark size={16} color={border} />
+                      }
+                    </button>
+                  </div>
                 </div>
               )
             })}
@@ -277,6 +376,33 @@ export default function BibleScreen({ navTarget, clearNavTarget }: Props) {
             </button>
           </div>
         </>
+      )}
+
+      {/* Verse usage modal */}
+      {usageModalVerseId && (
+        <div className="ios-modal z-50 flex flex-col modal-backdrop" style={{ background: 'rgba(0,0,0,0.5)' }}>
+          <div
+            className="flex flex-col mt-auto rounded-t-2xl overflow-hidden"
+            style={{ background: bg, maxHeight: 'calc(var(--app-height, 100dvh) * 0.7)' }}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0" style={{ borderColor: border, background: card }}>
+              <span className="font-semibold" style={{ color: text, fontSize: fs(15) }}>
+                Записи со стихом ({usageEntries.length})
+              </span>
+              <button onClick={() => setUsageModalVerseId(null)} className="active:opacity-70">
+                <X size={20} color={sub} />
+              </button>
+            </div>
+            <div className="flex-1 scroll-area">
+              {usageEntries.map(e => (
+                <div key={e.id} className="px-4 py-3 border-b" style={{ borderColor: border }}>
+                  <p className="font-semibold" style={{ fontSize: fs(14), color: text }}>{e.title}</p>
+                  <p className="text-xs mt-0.5" style={{ color: sub }}>{e.created_at.slice(0, 10)}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

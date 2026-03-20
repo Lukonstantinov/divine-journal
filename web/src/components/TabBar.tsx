@@ -1,7 +1,7 @@
 import React from 'react'
 import { Tab } from '../types'
 import { useTheme } from '../App'
-import { BookOpen, BookMarked, Calendar, Settings, type LucideIcon } from 'lucide-react'
+import { BookOpen, BookMarked, Calendar, Settings, Search, type LucideIcon } from 'lucide-react'
 
 interface Props {
   activeTab: Tab
@@ -12,6 +12,7 @@ const TABS: { id: Tab; label: string; Icon: LucideIcon }[] = [
   { id: 'journal', label: 'Дневник', Icon: BookOpen },
   { id: 'bible', label: 'Библия', Icon: BookMarked },
   { id: 'calendar', label: 'Календарь', Icon: Calendar },
+  { id: 'search', label: 'Поиск', Icon: Search },
   { id: 'settings', label: 'Настройки', Icon: Settings },
 ]
 
@@ -33,8 +34,8 @@ export default function TabBar({ activeTab, onTabChange }: Props) {
             className="flex flex-col items-center justify-center gap-0.5 flex-1 pt-2 active:opacity-70"
             style={{ color }}
           >
-            <Icon size={22} color={color} />
-            <span className="text-[10px] font-medium">{label}</span>
+            <Icon size={20} color={color} />
+            <span className="text-[9px] font-medium">{label}</span>
           </button>
         )
       })}
