@@ -2,12 +2,14 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTheme, NavTarget } from '../App'
 import { db, Entry, Folder, Fasting, getSetting } from '../db'
 import {
-  Block, CATEGORIES, HIGHLIGHT_COLORS, StyleRange, applyRanges,
+  Block, CATEGORIES, HIGHLIGHT_COLORS, StyleRange, VerseData, applyRanges,
   catColor, catLabel, fmtDate, fmtDateRu,
-  genId, getDailyVerseIndex, parseBlocks, calcStreak,
+  genId, getDailyVerseIndex, getVerseColor, getVerseFontFamily, parseBlocks, calcStreak,
 } from '../types'
 import { Plus, X, ChevronDown, ChevronUp, Folder as FolderIcon, Trash2, Edit3, Check, BookOpen, Calendar } from 'lucide-react'
 import RTToolbar, { ActiveFormats } from './RTToolbar'
+import VersePicker from './VersePicker'
+import VerseFormatModal from './VerseFormatModal'
 
 // HighlightedText: render a text block with styled inline spans
 function HighlightedText({ content, ranges, fontSize, color }: {
@@ -90,6 +92,13 @@ export default function JournalScreen({ navigateToBible }: Props) {
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null)
   const [selRange, setSelRange] = useState({ start: 0, end: 0 })
   const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
+
+  // Verse insert / format state
+  const [showVersePicker, setShowVersePicker] = useState(false)
+  const [showVerseFormat, setShowVerseFormat] = useState<{
+    blockId: string
+    data: VerseData & { boxColor?: string; fontFamily?: string }
+  } | null>(null)
 
   // Viewer
   const [viewing, setViewing] = useState<Entry | null>(null)
@@ -176,15 +185,21 @@ export default function JournalScreen({ navigateToBible }: Props) {
     const title = edTitle.trim() || textContent.slice(0, 50) || 'Запись'
     const content = JSON.stringify(edBlocks)
     const now = new Date().toISOString()
+    const linkedVerses = JSON.stringify(
+      edBlocks.filter(b => b.type === 'verse').flatMap(b => {
+        try { const v = JSON.parse(b.content) as VerseData; return [{ book: v.book, chapter: v.chapter, verse: v.verse }] }
+        catch { return [] }
+      })
+    )
 
     if (editing?.id) {
       await db.entries.update(editing.id, {
-        title, content, category: edCat, folder_id: edFolderId,
+        title, content, category: edCat, folder_id: edFolderId, linked_verses: linkedVerses,
       })
     } else {
       await db.entries.add({
         title, content, category: edCat,
-        created_at: now, linked_verses: '[]',
+        created_at: now, linked_verses: linkedVerses,
         folder_id: edFolderId, color: null,
       })
     }
@@ -257,6 +272,31 @@ export default function JournalScreen({ navigateToBible }: Props) {
     setEdBlocks(prev => prev.map(b =>
       b.id === activeBlockId ? { ...b, ranges: [...(b.ranges ?? []), newRange] } : b
     ))
+  }
+
+  const insertVerse = (v: VerseData) => {
+    const block: Block = {
+      id: genId(), type: 'verse',
+      content: JSON.stringify(v),
+      boxColor: 'gold', textStyle: 'serif',
+    }
+    const idx = activeBlockId ? edBlocks.findIndex(b => b.id === activeBlockId) : -1
+    setEdBlocks(prev => {
+      const next = [...prev]
+      if (idx >= 0) next.splice(idx + 1, 0, block)
+      else next.push(block)
+      return next
+    })
+    setShowVersePicker(false)
+  }
+
+  const saveVerseFormat = (blockId: string, updates: { boxColor?: string; fontFamily?: string }) => {
+    setEdBlocks(prev => prev.map(b =>
+      b.id === blockId
+        ? { ...b, boxColor: updates.boxColor ?? b.boxColor, textStyle: updates.fontFamily ?? b.textStyle }
+        : b
+    ))
+    setShowVerseFormat(null)
   }
 
   const filteredEntries = useMemo(() => {
@@ -572,6 +612,28 @@ export default function JournalScreen({ navigateToBible }: Props) {
                       )}
                     </div>
                   )}
+                  {block.type === 'verse' && (() => {
+                    try {
+                      const v = JSON.parse(block.content) as VerseData
+                      const vc = getVerseColor(block.boxColor ?? 'gold')
+                      const ff = getVerseFontFamily(block.textStyle ?? 'serif')
+                      return (
+                        <div className="relative">
+                          <button
+                            onClick={() => setShowVerseFormat({ blockId: block.id, data: { ...v, boxColor: block.boxColor, fontFamily: block.textStyle } })}
+                            className="w-full text-left px-3 py-2 rounded-lg border-l-4 active:opacity-80"
+                            style={{ background: vc.bg, borderColor: vc.border }}
+                          >
+                            <p className="italic leading-snug" style={{ fontSize: fs(13), color: '#333', fontFamily: ff }}>{v.text}</p>
+                            <p className="text-xs mt-1" style={{ color: vc.border }}>{v.book} {v.chapter}:{v.verse}</p>
+                          </button>
+                          <button onClick={() => removeBlock(block.id)} className="absolute top-1 right-1 p-1 active:opacity-70">
+                            <X size={12} color={sub} />
+                          </button>
+                        </div>
+                      )
+                    } catch { return null }
+                  })()}
                   {block.type === 'divider' && (
                     <div className="flex items-center gap-2 my-1">
                       <div className="flex-1 h-px" style={{ background: border }} />
@@ -583,13 +645,22 @@ export default function JournalScreen({ navigateToBible }: Props) {
                 </div>
               ))}
 
-              <button
-                onClick={addBlock}
-                className="text-xs px-3 py-1.5 rounded-lg border active:opacity-70 self-start"
-                style={{ color: primary, borderColor: primary }}
-              >
-                + Добавить блок
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={addBlock}
+                  className="text-xs px-3 py-1.5 rounded-lg border active:opacity-70"
+                  style={{ color: primary, borderColor: primary }}
+                >
+                  + Текст
+                </button>
+                <button
+                  onClick={() => setShowVersePicker(true)}
+                  className="text-xs px-3 py-1.5 rounded-lg border active:opacity-70"
+                  style={{ color: primary, borderColor: primary }}
+                >
+                  + Стих
+                </button>
+              </div>
             </div>
 
             {/* RTToolbar — sticky at bottom of editor */}
@@ -603,6 +674,24 @@ export default function JournalScreen({ navigateToBible }: Props) {
               onDivider={addDivider}
             />
           </div>
+        </div>
+      )}
+
+      {/* VersePicker modal */}
+      {showVersePicker && (
+        <div className="fixed inset-0 z-[60]">
+          <VersePicker onSelect={insertVerse} onClose={() => setShowVersePicker(false)} />
+        </div>
+      )}
+
+      {/* VerseFormatModal */}
+      {showVerseFormat && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
+          <VerseFormatModal
+            verse={showVerseFormat.data}
+            onSave={updates => saveVerseFormat(showVerseFormat.blockId, updates)}
+            onClose={() => setShowVerseFormat(null)}
+          />
         </div>
       )}
 
@@ -643,11 +732,13 @@ export default function JournalScreen({ navigateToBible }: Props) {
                   )}
                   {block.type === 'verse' && (() => {
                     try {
-                      const v = JSON.parse(block.content)
+                      const v = JSON.parse(block.content) as VerseData
+                      const vc = getVerseColor(block.boxColor ?? 'gold')
+                      const ff = getVerseFontFamily(block.textStyle ?? 'serif')
                       return (
-                        <div className="px-3 py-2 rounded-lg border-l-4" style={{ background: card, borderColor: primary }}>
-                          <p className="italic" style={{ fontSize: fs(14), color: text, fontFamily: 'Georgia, serif' }}>{v.text}</p>
-                          <p className="text-xs mt-1" style={{ color: sub }}>{v.book} {v.chapter}:{v.verse}</p>
+                        <div className="px-3 py-2 rounded-lg border-l-4" style={{ background: vc.bg, borderColor: vc.border }}>
+                          <p className="italic" style={{ fontSize: fs(14), color: '#333', fontFamily: ff }}>{v.text}</p>
+                          <p className="text-xs mt-1" style={{ color: vc.border }}>{v.book} {v.chapter}:{v.verse}</p>
                         </div>
                       )
                     } catch { return null }
