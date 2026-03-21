@@ -2,10 +2,43 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTheme, NavTarget } from '../App'
 import { db, Entry, Folder, Fasting, getSetting } from '../db'
 import {
-  Block, CATEGORIES, catColor, catLabel, fmtDate, fmtDateRu,
+  Block, CATEGORIES, HIGHLIGHT_COLORS, StyleRange, applyRanges,
+  catColor, catLabel, fmtDate, fmtDateRu,
   genId, getDailyVerseIndex, parseBlocks, calcStreak,
 } from '../types'
 import { Plus, X, ChevronDown, ChevronUp, Folder as FolderIcon, Trash2, Edit3, Check, BookOpen, Calendar } from 'lucide-react'
+import RTToolbar, { ActiveFormats } from './RTToolbar'
+
+// HighlightedText: render a text block with styled inline spans
+function HighlightedText({ content, ranges, fontSize, color }: {
+  content: string
+  ranges?: StyleRange[]
+  fontSize: number
+  color: string
+}) {
+  const spans = applyRanges(content, ranges)
+  return (
+    <span>
+      {spans.map((sp, i) => {
+        const hlColor = sp.highlight
+          ? HIGHLIGHT_COLORS.find(h => h.id === sp.highlight)?.color
+          : undefined
+        return (
+          <span key={i} style={{
+            fontWeight: sp.bold ? '700' : undefined,
+            fontStyle: sp.italic ? 'italic' : undefined,
+            textDecoration: sp.underline ? 'underline' : undefined,
+            backgroundColor: hlColor,
+            fontSize,
+            color,
+          }}>
+            {sp.text}
+          </span>
+        )
+      })}
+    </span>
+  )
+}
 
 // Lazy-load Bible verses to avoid blocking render
 let _allVerses: { id: string; text: string }[] | null = null
@@ -52,6 +85,11 @@ export default function JournalScreen({ navigateToBible }: Props) {
   const [edCat, setEdCat] = useState('мысль')
   const [edBlocks, setEdBlocks] = useState<Block[]>([])
   const [edFolderId, setEdFolderId] = useState<number | null>(null)
+
+  // Rich text editor state
+  const [activeBlockId, setActiveBlockId] = useState<string | null>(null)
+  const [selRange, setSelRange] = useState({ start: 0, end: 0 })
+  const textareaRefs = useRef<Record<string, HTMLTextAreaElement | null>>({})
 
   // Viewer
   const [viewing, setViewing] = useState<Entry | null>(null)
@@ -164,7 +202,61 @@ export default function JournalScreen({ navigateToBible }: Props) {
   }
 
   const addBlock = () => {
-    setEdBlocks(prev => [...prev, { id: genId(), type: 'text', content: '' }])
+    const id = genId()
+    setEdBlocks(prev => [...prev, { id, type: 'text', content: '' }])
+    setTimeout(() => textareaRefs.current[id]?.focus(), 50)
+  }
+
+  const addDivider = () => {
+    setEdBlocks(prev => {
+      const divider: Block = { id: genId(), type: 'divider', content: '' }
+      const idx = prev.findIndex(b => b.id === activeBlockId)
+      if (idx >= 0) {
+        const next = [...prev]
+        next.splice(idx + 1, 0, divider)
+        return next
+      }
+      return [...prev, divider]
+    })
+  }
+
+  const removeBlock = (id: string) => {
+    setEdBlocks(prev => prev.filter(b => b.id !== id))
+  }
+
+  // Detect active formats at the current cursor/selection position
+  const getActiveFormats = (): ActiveFormats => {
+    const block = edBlocks.find(b => b.id === activeBlockId)
+    if (!block?.ranges?.length) return {}
+    const pos = selRange.start
+    const formats: ActiveFormats = {}
+    for (const r of block.ranges) {
+      if (r.start <= pos && pos <= r.end) {
+        if (r.bold) formats.bold = true
+        if (r.italic) formats.italic = true
+        if (r.underline) formats.underline = true
+        if (r.fontSize) formats.fontSize = r.fontSize
+        if (r.highlight) formats.highlight = r.highlight
+      }
+    }
+    return formats
+  }
+
+  // Apply a format to the selected range of the active text block
+  const applyFormat = (type: 'bold' | 'italic' | 'underline' | 'fontSize' | 'highlight', value?: string | null) => {
+    if (!activeBlockId) return
+    const { start, end } = selRange
+    if (start === end && type !== 'fontSize') return
+    const newRange: StyleRange = { start, end }
+    if (type === 'bold') newRange.bold = true
+    else if (type === 'italic') newRange.italic = true
+    else if (type === 'underline') newRange.underline = true
+    else if (type === 'fontSize') newRange.fontSize = value ?? undefined
+    else if (type === 'highlight' && value) newRange.highlight = value
+    else return // null highlight = clear (handled by not adding range)
+    setEdBlocks(prev => prev.map(b =>
+      b.id === activeBlockId ? { ...b, ranges: [...(b.ranges ?? []), newRange] } : b
+    ))
   }
 
   const filteredEntries = useMemo(() => {
@@ -447,19 +539,46 @@ export default function JournalScreen({ navigateToBible }: Props) {
                 </div>
               )}
 
-              {/* Text blocks */}
-              {edBlocks.map((block, idx) => (
+              {/* Text / divider blocks */}
+              {edBlocks.map(block => (
                 <div key={block.id}>
                   {block.type === 'text' && (
-                    <textarea
-                      ref={idx === edBlocks.length - 1 ? textareaRef : undefined}
-                      className="w-full bg-transparent resize-none leading-relaxed allow-select"
-                      style={{ fontSize: Math.max(16, fs(15)), color: text, minHeight: 120 }}
-                      placeholder="Напишите здесь..."
-                      value={block.content}
-                      onChange={e => updateBlock(block.id, e.target.value)}
-                      rows={6}
-                    />
+                    <div className="relative">
+                      <textarea
+                        ref={el => { textareaRefs.current[block.id] = el }}
+                        className="w-full bg-transparent resize-none leading-relaxed allow-select"
+                        style={{
+                          fontSize: Math.max(16, fs(15)), color: text, minHeight: 100,
+                          outline: activeBlockId === block.id ? `1px solid ${border}` : 'none',
+                          borderRadius: 6, padding: activeBlockId === block.id ? 6 : 0,
+                        }}
+                        placeholder="Напишите здесь..."
+                        value={block.content}
+                        onChange={e => updateBlock(block.id, e.target.value)}
+                        onFocus={() => setActiveBlockId(block.id)}
+                        onSelect={e => {
+                          const ta = e.target as HTMLTextAreaElement
+                          setSelRange({ start: ta.selectionStart, end: ta.selectionEnd })
+                        }}
+                        rows={5}
+                      />
+                      {edBlocks.length > 1 && (
+                        <button
+                          onClick={() => removeBlock(block.id)}
+                          className="absolute top-0 right-0 p-1 active:opacity-70"
+                        >
+                          <X size={12} color={sub} />
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {block.type === 'divider' && (
+                    <div className="flex items-center gap-2 my-1">
+                      <div className="flex-1 h-px" style={{ background: border }} />
+                      <button onClick={() => removeBlock(block.id)} className="active:opacity-70">
+                        <X size={10} color={sub} />
+                      </button>
+                    </div>
                   )}
                 </div>
               ))}
@@ -472,6 +591,17 @@ export default function JournalScreen({ navigateToBible }: Props) {
                 + Добавить блок
               </button>
             </div>
+
+            {/* RTToolbar — sticky at bottom of editor */}
+            <RTToolbar
+              active={getActiveFormats()}
+              onBold={() => applyFormat('bold')}
+              onItalic={() => applyFormat('italic')}
+              onUnderline={() => applyFormat('underline')}
+              onFontSize={size => applyFormat('fontSize', size)}
+              onHighlight={color => applyFormat('highlight', color)}
+              onDivider={addDivider}
+            />
           </div>
         </div>
       )}
@@ -508,7 +638,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
                 <div key={block.id} className="mb-3">
                   {block.type === 'text' && (
                     <p className="leading-relaxed whitespace-pre-wrap" style={{ fontSize: fs(15), color: text }}>
-                      {block.content}
+                      <HighlightedText content={block.content} ranges={block.ranges} fontSize={fs(15)} color={text} />
                     </p>
                   )}
                   {block.type === 'verse' && (() => {
@@ -522,6 +652,9 @@ export default function JournalScreen({ navigateToBible }: Props) {
                       )
                     } catch { return null }
                   })()}
+                  {block.type === 'divider' && (
+                    <div className="h-px my-1" style={{ background: border }} />
+                  )}
                 </div>
               ))}
             </div>
