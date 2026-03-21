@@ -100,6 +100,18 @@ class DivineJournalDB extends Dexie {
       achievements: '&id',
       daily_reading_history: '++id, &date',
     })
+    // v3: same schema — reserved for future migrations
+    this.version(3).stores({
+      entries: '++id, category, folder_id, created_at',
+      bookmarks: '++id, &verse_id, created_at',
+      reading_plan: '++id, date, [date+book+chapter]',
+      daily_notes: '++id, &date',
+      fasting: '++id, start_date, end_date',
+      folders: '++id, sort_order',
+      app_settings: '&key',
+      achievements: '&id',
+      daily_reading_history: '++id, &date',
+    })
   }
 }
 
