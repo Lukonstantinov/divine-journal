@@ -1,11 +1,11 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTheme, NavTarget } from '../App'
-import { db, Entry, Folder } from '../db'
+import { db, Entry, Folder, Fasting, getSetting } from '../db'
 import {
   Block, CATEGORIES, catColor, catLabel, fmtDate, fmtDateRu,
-  genId, getDailyVerseIndex, parseBlocks,
+  genId, getDailyVerseIndex, parseBlocks, calcStreak,
 } from '../types'
-import { Plus, X, ChevronDown, ChevronUp, Folder as FolderIcon, Trash2, Edit3, Check, BookOpen } from 'lucide-react'
+import { Plus, X, ChevronDown, ChevronUp, Folder as FolderIcon, Trash2, Edit3, Check, BookOpen, Calendar } from 'lucide-react'
 
 // Lazy-load Bible verses to avoid blocking render
 let _allVerses: { id: string; text: string }[] | null = null
@@ -26,9 +26,24 @@ export default function JournalScreen({ navigateToBible }: Props) {
 
   const [entries, setEntries] = useState<Entry[]>([])
   const [folders, setFolders] = useState<Folder[]>([])
+  const [fastings, setFastings] = useState<Fasting[]>([])
   const [activeFolderId, setActiveFolderId] = useState<number | null | 'all'>('all')
   const [dailyVerse, setDailyVerse] = useState<{ id: string; text: string } | null>(null)
   const [verseExpanded, setVerseExpanded] = useState(true)
+  const [searchQ, setSearchQ] = useState('')
+
+  // "On This Day" memories
+  const [memories, setMemories] = useState<Entry[]>([])
+  const [showMemories, setShowMemories] = useState(true)
+
+  // Reading plan progress
+  const [planProgress, setPlanProgress] = useState<{
+    total: number; completed: number; nextBook?: string; nextChapter?: number
+  } | null>(null)
+
+  // Appearance settings
+  const [noteOpacity, setNoteOpacity] = useState(0.10)
+  const [fastingBorderColor, setFastingBorderColor] = useState('#9C27B0')
 
   // Editor state
   const [editing, setEditing] = useState<Entry | null>(null)
@@ -44,12 +59,43 @@ export default function JournalScreen({ navigateToBible }: Props) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const load = useCallback(async () => {
-    const [ents, fols] = await Promise.all([
+    const [ents, fols, fasts] = await Promise.all([
       db.entries.orderBy('created_at').reverse().toArray(),
       db.folders.orderBy('sort_order').toArray(),
+      db.fasting.toArray(),
     ])
     setEntries(ents)
     setFolders(fols)
+    setFastings(fasts)
+
+    // "On This Day" memories — same MM-DD as today, but a previous year
+    const today = new Date()
+    const mm = String(today.getMonth() + 1).padStart(2, '0')
+    const dd = String(today.getDate()).padStart(2, '0')
+    const yyyy = String(today.getFullYear())
+    const mmdd = `${mm}-${dd}`
+    const mems = ents.filter(e => {
+      const d = e.created_at.slice(0, 10)
+      return d.slice(5) === mmdd && d.slice(0, 4) !== yyyy
+    })
+    setMemories(mems)
+
+    // Reading plan progress
+    const allPlan = await db.reading_plan.toArray()
+    if (allPlan.length > 0) {
+      const total = allPlan.length
+      const completed = allPlan.filter(r => r.completed).length
+      const next = allPlan.find(r => !r.completed)
+      setPlanProgress({ total, completed, nextBook: next?.book, nextChapter: next?.chapter })
+    } else {
+      setPlanProgress(null)
+    }
+
+    // Appearance settings
+    const opacityStr = await getSetting('note_color_opacity', '0.10')
+    setNoteOpacity(parseFloat(opacityStr) || 0.10)
+    const fastingColor = await getSetting('fasting_border_color', '#9C27B0')
+    setFastingBorderColor(fastingColor)
   }, [])
 
   useEffect(() => {
@@ -60,6 +106,12 @@ export default function JournalScreen({ navigateToBible }: Props) {
       }
     })
   }, [load])
+
+  // Check if entry date falls within a fasting period
+  const isFastingEntry = (entry: Entry): boolean => {
+    const d = entry.created_at.slice(0, 10)
+    return fastings.some(f => d >= f.start_date && d <= f.end_date)
+  }
 
   const openNew = () => {
     setEditing(null)
@@ -115,17 +167,25 @@ export default function JournalScreen({ navigateToBible }: Props) {
     setEdBlocks(prev => [...prev, { id: genId(), type: 'text', content: '' }])
   }
 
-  const filteredEntries = entries.filter(e => {
-    if (activeFolderId === 'all') return true
-    return e.folder_id === activeFolderId
-  })
+  const filteredEntries = useMemo(() => {
+    return entries.filter(e => {
+      if (activeFolderId !== 'all' && e.folder_id !== activeFolderId) return false
+      if (searchQ) {
+        const q = searchQ.toLowerCase()
+        const titleMatch = e.title.toLowerCase().includes(q)
+        const contentMatch = (() => {
+          try {
+            const blocks = JSON.parse(e.content) as Block[]
+            return blocks.some(b => b.type === 'text' && b.content.toLowerCase().includes(q))
+          } catch { return e.content.toLowerCase().includes(q) }
+        })()
+        if (!titleMatch && !contentMatch) return false
+      }
+      return true
+    })
+  }, [entries, activeFolderId, searchQ])
 
-  const bg = theme.bg
-  const card = theme.card
-  const border = theme.border
-  const text = theme.text
-  const sub = theme.subtext
-  const primary = theme.primary
+  const { bg, card, border, text, subtext: sub, primary, accent } = theme
 
   return (
     <div className="flex flex-col h-full" style={{ background: bg }}>
@@ -141,9 +201,35 @@ export default function JournalScreen({ navigateToBible }: Props) {
         </button>
       </div>
 
+      {/* Reading plan progress card */}
+      {planProgress && planProgress.total > 0 && (
+        <div className="mx-3 mt-3 rounded-xl px-3 py-2 flex-shrink-0"
+          style={{ background: card, border: `1px solid ${border}` }}>
+          <div className="flex items-center justify-between mb-1.5">
+            <span style={{ fontSize: fs(12), color: sub }}>
+              📖 План чтения: {planProgress.completed}/{planProgress.total}
+            </span>
+            {planProgress.nextBook && (
+              <span style={{ fontSize: fs(11), color: primary }}>
+                Далее: {planProgress.nextBook} {planProgress.nextChapter}
+              </span>
+            )}
+          </div>
+          <div className="h-1.5 rounded-full overflow-hidden" style={{ background: border }}>
+            <div
+              className="h-full rounded-full transition-all"
+              style={{
+                background: primary,
+                width: `${Math.round((planProgress.completed / planProgress.total) * 100)}%`,
+              }}
+            />
+          </div>
+        </div>
+      )}
+
       {/* Daily verse banner */}
       {dailyVerse && (
-        <div className="mx-3 mt-3 rounded-xl overflow-hidden flex-shrink-0" style={{ background: card, borderWidth: 1, borderColor: border, borderStyle: 'solid' }}>
+        <div className="mx-3 mt-3 rounded-xl overflow-hidden flex-shrink-0" style={{ background: card, border: `1px solid ${border}` }}>
           <button
             className="w-full flex items-center justify-between px-3 py-2 active:opacity-70"
             onClick={() => setVerseExpanded(v => !v)}
@@ -159,6 +245,49 @@ export default function JournalScreen({ navigateToBible }: Props) {
               <p className="mt-1 text-[10px]" style={{ color: sub }}>{dailyVerse.id}</p>
             </div>
           )}
+        </div>
+      )}
+
+      {/* "On This Day" memories */}
+      {showMemories && memories.length > 0 && (
+        <div className="mx-3 mt-3 rounded-xl px-3 pt-2 pb-3 flex-shrink-0"
+          style={{ background: card, border: `1px solid ${accent}` }}>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-1.5">
+              <Calendar size={14} color={accent} />
+              <span className="text-xs font-semibold" style={{ color: accent }}>В этот день</span>
+            </div>
+            <button onClick={() => setShowMemories(false)} className="active:opacity-70">
+              <X size={14} color={sub} />
+            </button>
+          </div>
+          <div className="flex gap-2 overflow-x-auto scroll-area" style={{ scrollbarWidth: 'none' }}>
+            {memories.map(mem => (
+              <button
+                key={mem.id}
+                onClick={() => setViewing(mem)}
+                className="flex-shrink-0 rounded-xl p-2.5 text-left active:opacity-70"
+                style={{ width: 152, background: bg, border: `1px solid ${border}` }}
+              >
+                <p className="text-[10px] mb-1" style={{ color: sub }}>
+                  {new Date(mem.created_at).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })}
+                </p>
+                <span
+                  className="text-[10px] px-1.5 py-0.5 rounded-full inline-block mb-1"
+                  style={{ background: catColor(mem.category) + '22', color: catColor(mem.category) }}
+                >
+                  {catLabel(mem.category)}
+                </span>
+                <p className="font-semibold truncate" style={{ fontSize: fs(12), color: text }}>{mem.title}</p>
+                {(() => {
+                  const pv = parseBlocks(mem.content).find(b => b.type === 'text')?.content?.slice(0, 80) ?? ''
+                  return pv
+                    ? <p className="mt-0.5 line-clamp-2 leading-tight" style={{ fontSize: fs(11), color: sub }}>{pv}</p>
+                    : null
+                })()}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -185,12 +314,38 @@ export default function JournalScreen({ navigateToBible }: Props) {
         </div>
       )}
 
+      {/* Search bar */}
+      <div className="px-3 pt-2 flex-shrink-0">
+        <div
+          className="flex items-center gap-2 px-3 py-1.5 rounded-xl"
+          style={{ background: card, border: `1px solid ${border}` }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={sub} strokeWidth="2">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+          <input
+            className="flex-1 bg-transparent outline-none text-sm"
+            style={{ fontSize: fs(13), color: text }}
+            placeholder="Поиск по записям..."
+            value={searchQ}
+            onChange={e => setSearchQ(e.target.value)}
+          />
+          {searchQ && (
+            <button onClick={() => setSearchQ('')} className="active:opacity-70">
+              <X size={12} color={sub} />
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Entries list */}
       <div className="flex-1 scroll-area px-3 pt-3 pb-2">
         {filteredEntries.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-40 gap-2">
             <BookOpen size={32} color={sub} />
-            <p style={{ color: sub, fontSize: fs(14) }}>Нет записей. Нажмите + чтобы начать.</p>
+            <p style={{ color: sub, fontSize: fs(14) }}>
+              {entries.length === 0 ? 'Нет записей. Нажмите + чтобы начать.' : 'Нет записей по фильтру.'}
+            </p>
           </div>
         ) : (
           <div className="flex flex-col gap-3">
@@ -200,6 +355,9 @@ export default function JournalScreen({ navigateToBible }: Props) {
                 entry={entry}
                 theme={theme}
                 fontScale={fontScale}
+                noteOpacity={noteOpacity}
+                isFasting={isFastingEntry(entry)}
+                fastingBorderColor={fastingBorderColor}
                 onTap={() => setViewing(entry)}
                 onEdit={() => openEdit(entry)}
                 onDelete={() => entry.id && del(entry.id)}
@@ -211,7 +369,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
 
       {/* Editor Modal */}
       {showEditor && (
-        <div className="ios-modal z-50 flex flex-col modal-backdrop" style={{ background: 'rgba(0,0,0,0.5)' }}>
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: 'rgba(0,0,0,0.5)' }}>
           <div
             className="flex flex-col mt-auto rounded-t-2xl overflow-hidden"
             style={{ background: bg, maxHeight: 'calc(var(--app-height, 100dvh) * 0.92)' }}
@@ -320,7 +478,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
 
       {/* Viewer Modal */}
       {viewing && (
-        <div className="ios-modal z-50 flex flex-col modal-backdrop" style={{ background: 'rgba(0,0,0,0.5)' }}>
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: 'rgba(0,0,0,0.5)' }}>
           <div
             className="flex flex-col mt-auto rounded-t-2xl overflow-hidden"
             style={{ background: bg, maxHeight: 'calc(var(--app-height, 100dvh) * 0.92)' }}
@@ -347,7 +505,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
                 <span className="text-xs" style={{ color: sub }}>{fmtDateRu(viewing.created_at.slice(0, 10))}</span>
               </div>
               {parseBlocks(viewing.content).map(block => (
-                <div key={block.id}>
+                <div key={block.id} className="mb-3">
                   {block.type === 'text' && (
                     <p className="leading-relaxed whitespace-pre-wrap" style={{ fontSize: fs(15), color: text }}>
                       {block.content}
@@ -357,7 +515,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
                     try {
                       const v = JSON.parse(block.content)
                       return (
-                        <div className="my-3 px-3 py-2 rounded-lg border-l-4" style={{ background: card, borderColor: primary }}>
+                        <div className="px-3 py-2 rounded-lg border-l-4" style={{ background: card, borderColor: primary }}>
                           <p className="italic" style={{ fontSize: fs(14), color: text, fontFamily: 'Georgia, serif' }}>{v.text}</p>
                           <p className="text-xs mt-1" style={{ color: sub }}>{v.book} {v.chapter}:{v.verse}</p>
                         </div>
@@ -393,10 +551,13 @@ function FolderChip({ label, active, color, onClick, theme }: {
   )
 }
 
-function EntryCard({ entry, theme, fontScale, onTap, onEdit, onDelete }: {
+function EntryCard({ entry, theme, fontScale, noteOpacity, isFasting, fastingBorderColor, onTap, onEdit, onDelete }: {
   entry: Entry
   theme: ReturnType<typeof useTheme>['theme']
   fontScale: number
+  noteOpacity: number
+  isFasting: boolean
+  fastingBorderColor: string
   onTap: () => void
   onEdit: () => void
   onDelete: () => void
@@ -408,10 +569,18 @@ function EntryCard({ entry, theme, fontScale, onTap, onEdit, onDelete }: {
   const blocks = parseBlocks(entry.content)
   const preview = blocks.find(b => b.type === 'text')?.content?.slice(0, 120) ?? ''
 
+  // Compute card border/background based on color and fasting state
+  const cardBg = entry.color
+    ? `rgba(${hexToRgb(entry.color)}, ${noteOpacity})`
+    : theme.card
+  const cardBorder = isFasting
+    ? `2px dashed ${fastingBorderColor}`
+    : `1px solid ${theme.border}`
+
   return (
     <div
       className="rounded-xl overflow-hidden"
-      style={{ background: theme.card, border: `1px solid ${theme.border}` }}
+      style={{ background: cardBg, border: cardBorder }}
     >
       <button className="w-full text-left px-4 pt-3 pb-2 active:opacity-80" onClick={onTap}>
         <div className="flex items-start justify-between gap-2">
@@ -495,4 +664,11 @@ function EntryCard({ entry, theme, fontScale, onTap, onEdit, onDelete }: {
       )}
     </div>
   )
+}
+
+// Helper: convert hex color to "R, G, B" string for rgba()
+function hexToRgb(hex: string): string {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+  if (!result) return '139, 69, 19'
+  return `${parseInt(result[1], 16)}, ${parseInt(result[2], 16)}, ${parseInt(result[3], 16)}`
 }
