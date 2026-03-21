@@ -1,10 +1,10 @@
-# Web Implementation Plan — Divine Journal v5.7 Feature Parity
+# Web Implementation Plan — Divine Journal v5.8 Feature Parity
 
 ## Status Overview
 
 The web version (`web/`) is a React + Vite + Tailwind + Dexie (IndexedDB) port of the React Native mobile app.
 
-**Phase 1 is DONE** (committed). Phases 2–4 are the remaining work.
+**All phases DONE** (Phases 1–4 committed). Web app bumped to v5.8.
 
 ---
 
@@ -213,9 +213,9 @@ The web version (`web/`) is a React + Vite + Tailwind + Dexie (IndexedDB) port o
 
 | File | Current Lines | Target Lines | Status |
 |------|--------------|-------------|--------|
-| `web/src/components/JournalScreen.tsx` | 498 | ~900 | **TODO (Phase 2)** |
-| `web/src/components/SettingsScreen.tsx` | 254 | ~500 | **TODO (Phase 3)** |
-| `web/src/components/SearchScreen.tsx` | 153 | ~300 | **TODO (Phase 4)** |
+| `web/src/components/JournalScreen.tsx` | 498 | ~900 | **DONE (Phase 2)** |
+| `web/src/components/SettingsScreen.tsx` | 254 | ~500 | **DONE (Phase 3)** |
+| `web/src/components/SearchScreen.tsx` | 153 | ~300 | **DONE (Phase 4)** |
 | `web/src/components/BibleScreen.tsx` | 409 | ~420 | Minor tweaks only |
 | `web/src/components/CalendarScreen.tsx` | 584 | ~600 | Minor tweaks only |
 | `web/src/App.tsx` | — | — | Pass new props as needed |
