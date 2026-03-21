@@ -241,7 +241,7 @@ achievements     (id TEXT PK, unlocked_at TEXT, title TEXT, description TEXT)
 - Graph: Force-directed layout (60 iterations) in `computeGraph()`, rendered with react-native-svg
 
 ### Version Management
-- **Current version: v5.7**
+- **Current version: v5.8**
 - **On every code change built into an APK, bump the version (patch: 5.4 → 5.5 etc.)**
 - Update in **3 places**:
   1. `App.tsx` line ~195: `version: '5.X'` inside `collectBackupData()`
