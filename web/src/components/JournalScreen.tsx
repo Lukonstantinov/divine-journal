@@ -12,6 +12,7 @@ import VersePicker from './VersePicker'
 import VerseFormatModal from './VerseFormatModal'
 import DailyReadingCard from './DailyReadingCard'
 import DailyReadingModal from './DailyReadingModal'
+import FolderManager from './FolderManager'
 
 // HighlightedText: render a text block with styled inline spans
 function HighlightedText({ content, ranges, fontSize, color }: {
@@ -86,6 +87,21 @@ export default function JournalScreen({ navigateToBible }: Props) {
   const [readingIsRead, setReadingIsRead] = useState(false)
   const [readingStreak, setReadingStreak] = useState(0)
   const [showDailyReading, setShowDailyReading] = useState(false)
+
+  // Multi-select
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [showBatchFolderPicker, setShowBatchFolderPicker] = useState(false)
+
+  // Folder manager
+  const [showFolderManager, setShowFolderManager] = useState(false)
+
+  // Search filters
+  const [showFilters, setShowFilters] = useState(false)
+  const [filterCats, setFilterCats] = useState<string[]>([])
+  const [filterDateFrom, setFilterDateFrom] = useState('')
+  const [filterDateTo, setFilterDateTo] = useState('')
+  const [filterHasVerses, setFilterHasVerses] = useState(false)
 
   // Editor state
   const [editing, setEditing] = useState<Entry | null>(null)
@@ -321,6 +337,44 @@ export default function JournalScreen({ navigateToBible }: Props) {
     setShowVerseFormat(null)
   }
 
+  const toggleSelect = (id: number) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  const exitSelectMode = () => { setSelectMode(false); setSelectedIds(new Set()) }
+
+  const batchMove = async (folderId: number | null) => {
+    await Promise.all([...selectedIds].map(id => db.entries.update(id, { folder_id: folderId })))
+    setShowBatchFolderPicker(false)
+    exitSelectMode()
+    load()
+  }
+
+  const handleAddFolder = async (name: string, color: string, icon: string) => {
+    const maxOrder = folders.reduce((m, f) => Math.max(m, f.sort_order), 0)
+    await db.folders.add({ name, color, icon, sort_order: maxOrder + 1 })
+    load()
+  }
+
+  const handleEditFolder = async (id: number, name: string, color: string, icon: string) => {
+    await db.folders.update(id, { name, color, icon })
+    load()
+  }
+
+  const handleDeleteFolder = async (id: number) => {
+    await db.entries.where('folder_id').equals(id).modify({ folder_id: null })
+    await db.folders.delete(id)
+    if (activeFolderId === id) setActiveFolderId('all')
+    load()
+  }
+
+  const hasActiveFilters = filterCats.length > 0 || filterDateFrom || filterDateTo || filterHasVerses
+
   const filteredEntries = useMemo(() => {
     return entries.filter(e => {
       if (activeFolderId !== 'all' && e.folder_id !== activeFolderId) return false
@@ -335,9 +389,19 @@ export default function JournalScreen({ navigateToBible }: Props) {
         })()
         if (!titleMatch && !contentMatch) return false
       }
+      if (filterCats.length > 0 && !filterCats.includes(e.category)) return false
+      const entryDate = e.created_at.slice(0, 10)
+      if (filterDateFrom && entryDate < filterDateFrom) return false
+      if (filterDateTo && entryDate > filterDateTo) return false
+      if (filterHasVerses) {
+        try {
+          const blocks = JSON.parse(e.content) as Block[]
+          if (!blocks.some(b => b.type === 'verse')) return false
+        } catch { return false }
+      }
       return true
     })
-  }, [entries, activeFolderId, searchQ])
+  }, [entries, activeFolderId, searchQ, filterCats, filterDateFrom, filterDateTo, filterHasVerses])
 
   const handleSaveToJournal = async (title: string, verseData: VerseData) => {
     const block: Block = { id: genId(), type: 'verse', content: JSON.stringify(verseData), boxColor: 'gold', textStyle: 'serif' }
@@ -363,14 +427,41 @@ export default function JournalScreen({ navigateToBible }: Props) {
     <div className="flex flex-col h-full" style={{ background: bg }}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0" style={{ borderColor: border, background: card }}>
-        <h1 className="font-bold" style={{ fontSize: fs(18), color: text }}>Духовный Дневник</h1>
-        <button
-          onClick={openNew}
-          className="w-8 h-8 rounded-full flex items-center justify-center active:opacity-70"
-          style={{ background: primary }}
-        >
-          <Plus size={18} color="#fff" />
-        </button>
+        {selectMode ? (
+          <>
+            <button onClick={exitSelectMode} className="active:opacity-70"><X size={20} color={sub} /></button>
+            <span className="font-semibold" style={{ fontSize: fs(15), color: text }}>
+              {selectedIds.size > 0 ? `Выбрано: ${selectedIds.size}` : 'Выбор записей'}
+            </span>
+            <button
+              onClick={() => setSelectedIds(new Set(filteredEntries.filter(e => e.id).map(e => e.id!)))}
+              className="text-xs active:opacity-70" style={{ color: primary }}
+            >Все</button>
+          </>
+        ) : (
+          <>
+            <h1 className="font-bold" style={{ fontSize: fs(18), color: text }}>Духовный Дневник</h1>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setSelectMode(true)}
+                className="w-8 h-8 rounded-full flex items-center justify-center active:opacity-70"
+                style={{ background: card, border: `1px solid ${border}` }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={sub} strokeWidth="2">
+                  <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+                  <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+                </svg>
+              </button>
+              <button
+                onClick={openNew}
+                className="w-8 h-8 rounded-full flex items-center justify-center active:opacity-70"
+                style={{ background: primary }}
+              >
+                <Plus size={18} color="#fff" />
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Daily Reading Card */}
@@ -494,28 +585,100 @@ export default function JournalScreen({ navigateToBible }: Props) {
         </div>
       )}
 
-      {/* Search bar */}
+      {/* Search bar + filter toggle + folder manager */}
       <div className="px-3 pt-2 flex-shrink-0">
-        <div
-          className="flex items-center gap-2 px-3 py-1.5 rounded-xl"
-          style={{ background: card, border: `1px solid ${border}` }}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={sub} strokeWidth="2">
-            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-          </svg>
-          <input
-            className="flex-1 bg-transparent outline-none text-sm"
-            style={{ fontSize: fs(13), color: text }}
-            placeholder="Поиск по записям..."
-            value={searchQ}
-            onChange={e => setSearchQ(e.target.value)}
-          />
-          {searchQ && (
-            <button onClick={() => setSearchQ('')} className="active:opacity-70">
-              <X size={12} color={sub} />
-            </button>
-          )}
+        <div className="flex gap-2 items-center mb-1">
+          <div
+            className="flex-1 flex items-center gap-2 px-3 py-1.5 rounded-xl"
+            style={{ background: card, border: `1px solid ${border}` }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={sub} strokeWidth="2">
+              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+            </svg>
+            <input
+              className="flex-1 bg-transparent outline-none text-sm"
+              style={{ fontSize: fs(13), color: text }}
+              placeholder="Поиск по записям..."
+              value={searchQ}
+              onChange={e => setSearchQ(e.target.value)}
+            />
+            {searchQ && (
+              <button onClick={() => setSearchQ('')} className="active:opacity-70">
+                <X size={12} color={sub} />
+              </button>
+            )}
+          </div>
+          {/* Filter toggle */}
+          <button
+            onClick={() => setShowFilters(v => !v)}
+            className="w-8 h-8 flex items-center justify-center rounded-xl active:opacity-70 flex-shrink-0"
+            style={{
+              background: (showFilters || hasActiveFilters) ? primary + '22' : card,
+              border: `1px solid ${(showFilters || hasActiveFilters) ? primary : border}`,
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={(showFilters || hasActiveFilters) ? primary : sub} strokeWidth="2">
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+            </svg>
+          </button>
+          {/* Folder manager */}
+          <button
+            onClick={() => setShowFolderManager(true)}
+            className="w-8 h-8 flex items-center justify-center rounded-xl active:opacity-70 flex-shrink-0"
+            style={{ background: card, border: `1px solid ${border}` }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={sub} strokeWidth="2">
+              <path d="M20 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M16 3H8l-2 4h12l-2-4z"/>
+            </svg>
+          </button>
         </div>
+
+        {/* Filter panel (collapsible) */}
+        {showFilters && (
+          <div className="mb-2 px-3 py-2 rounded-xl" style={{ background: card, border: `1px solid ${border}` }}>
+            {/* Category chips */}
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {CATEGORIES.map(c => (
+                <button
+                  key={c.id}
+                  onClick={() => setFilterCats(prev => prev.includes(c.id) ? prev.filter(x => x !== c.id) : [...prev, c.id])}
+                  className="px-2 py-0.5 rounded-full text-xs active:opacity-70"
+                  style={{
+                    background: filterCats.includes(c.id) ? c.color : 'transparent',
+                    color: filterCats.includes(c.id) ? '#fff' : c.color,
+                    border: `1px solid ${c.color}`,
+                  }}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+            {/* Date range */}
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-xs flex-shrink-0" style={{ color: sub }}>С:</span>
+              <input type="date" value={filterDateFrom} onChange={e => setFilterDateFrom(e.target.value)}
+                className="flex-1 bg-transparent border rounded px-1 py-0.5 text-xs"
+                style={{ color: text, borderColor: border }} />
+              <span className="text-xs flex-shrink-0" style={{ color: sub }}>По:</span>
+              <input type="date" value={filterDateTo} onChange={e => setFilterDateTo(e.target.value)}
+                className="flex-1 bg-transparent border rounded px-1 py-0.5 text-xs"
+                style={{ color: text, borderColor: border }} />
+            </div>
+            {/* Has verses + reset */}
+            <div className="flex items-center justify-between">
+              <label className="flex items-center gap-2 text-xs cursor-pointer" style={{ color: text }}>
+                <input type="checkbox" checked={filterHasVerses} onChange={e => setFilterHasVerses(e.target.checked)} />
+                Только со стихами
+              </label>
+              {hasActiveFilters && (
+                <button
+                  onClick={() => { setFilterCats([]); setFilterDateFrom(''); setFilterDateTo(''); setFilterHasVerses(false) }}
+                  className="text-xs active:opacity-70" style={{ color: '#ef4444' }}
+                >Сбросить</button>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Entries list */}
@@ -538,14 +701,77 @@ export default function JournalScreen({ navigateToBible }: Props) {
                 noteOpacity={noteOpacity}
                 isFasting={isFastingEntry(entry)}
                 fastingBorderColor={fastingBorderColor}
-                onTap={() => setViewing(entry)}
+                selectMode={selectMode}
+                isSelected={selectedIds.has(entry.id!)}
+                onTap={() => selectMode && entry.id ? toggleSelect(entry.id) : setViewing(entry)}
                 onEdit={() => openEdit(entry)}
                 onDelete={() => entry.id && del(entry.id)}
+                onLongPress={() => { if (!selectMode) { setSelectMode(true); entry.id && setSelectedIds(new Set([entry.id])) } }}
               />
             ))}
           </div>
         )}
       </div>
+
+      {/* Multi-select bottom bar */}
+      {selectMode && selectedIds.size > 0 && (
+        <div className="fixed bottom-16 left-0 right-0 flex items-center gap-3 px-4 py-3 z-40"
+          style={{ background: card, borderTop: `1px solid ${border}` }}>
+          <button
+            onClick={() => setShowBatchFolderPicker(true)}
+            className="flex-1 py-2.5 rounded-xl font-semibold text-sm active:opacity-70"
+            style={{ background: primary, color: '#fff' }}
+          >
+            Переместить ({selectedIds.size})
+          </button>
+          <button
+            onClick={exitSelectMode}
+            className="py-2.5 px-4 rounded-xl text-sm active:opacity-70"
+            style={{ background: border, color: text }}
+          >
+            Отмена
+          </button>
+        </div>
+      )}
+
+      {/* Batch folder picker */}
+      {showBatchFolderPicker && (
+        <div className="fixed inset-0 z-50 flex flex-col justify-end" style={{ background: 'rgba(0,0,0,0.5)' }}>
+          <div className="rounded-t-2xl" style={{ background: card }}>
+            <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: border }}>
+              <span className="font-semibold" style={{ color: text }}>Переместить в папку</span>
+              <button onClick={() => setShowBatchFolderPicker(false)} className="active:opacity-70">
+                <X size={20} color={sub} />
+              </button>
+            </div>
+            <div className="p-3 flex flex-col gap-1 max-h-64 overflow-y-auto">
+              <button onClick={() => batchMove(null)}
+                className="px-4 py-3 rounded-xl text-sm text-left active:opacity-70"
+                style={{ color: sub }}>Без папки</button>
+              {folders.map(f => (
+                <button key={f.id} onClick={() => batchMove(f.id!)}
+                  className="px-4 py-3 rounded-xl text-sm text-left active:opacity-70"
+                  style={{ color: f.color }}>{f.name}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FolderManager modal */}
+      {showFolderManager && (
+        <div className="fixed inset-0 z-50 flex flex-col justify-end" style={{ background: 'rgba(0,0,0,0.5)' }}>
+          <div className="rounded-t-2xl overflow-hidden" style={{ background: bg, maxHeight: '85dvh' }}>
+            <FolderManager
+              folders={folders}
+              onAdd={handleAddFolder}
+              onEdit={handleEditFolder}
+              onDelete={handleDeleteFolder}
+              onClose={() => setShowFolderManager(false)}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Editor Modal */}
       {showEditor && (
@@ -866,16 +1092,19 @@ function FolderChip({ label, active, color, onClick, theme }: {
   )
 }
 
-function EntryCard({ entry, theme, fontScale, noteOpacity, isFasting, fastingBorderColor, onTap, onEdit, onDelete }: {
+function EntryCard({ entry, theme, fontScale, noteOpacity, isFasting, fastingBorderColor, selectMode, isSelected, onTap, onEdit, onDelete, onLongPress }: {
   entry: Entry
   theme: ReturnType<typeof useTheme>['theme']
   fontScale: number
   noteOpacity: number
   isFasting: boolean
   fastingBorderColor: string
+  selectMode: boolean
+  isSelected: boolean
   onTap: () => void
   onEdit: () => void
   onDelete: () => void
+  onLongPress: () => void
 }) {
   const fs = (base: number) => Math.round(base * fontScale)
   const [expanded, setExpanded] = useState(false)
@@ -884,21 +1113,32 @@ function EntryCard({ entry, theme, fontScale, noteOpacity, isFasting, fastingBor
   const blocks = parseBlocks(entry.content)
   const preview = blocks.find(b => b.type === 'text')?.content?.slice(0, 120) ?? ''
 
-  // Compute card border/background based on color and fasting state
   const cardBg = entry.color
     ? `rgba(${hexToRgb(entry.color)}, ${noteOpacity})`
     : theme.card
-  const cardBorder = isFasting
-    ? `2px dashed ${fastingBorderColor}`
-    : `1px solid ${theme.border}`
+  const cardBorder = isSelected
+    ? `2px solid ${theme.primary}`
+    : isFasting
+      ? `2px dashed ${fastingBorderColor}`
+      : `1px solid ${theme.border}`
 
   return (
     <div
       className="rounded-xl overflow-hidden"
       style={{ background: cardBg, border: cardBorder }}
     >
-      <button className="w-full text-left px-4 pt-3 pb-2 active:opacity-80" onClick={onTap}>
+      <button
+        className="w-full text-left px-4 pt-3 pb-2 active:opacity-80"
+        onClick={onTap}
+        onContextMenu={e => { e.preventDefault(); onLongPress() }}
+      >
         <div className="flex items-start justify-between gap-2">
+          {selectMode && (
+            <div className="flex-shrink-0 mt-0.5 w-5 h-5 rounded-full border-2 flex items-center justify-center"
+              style={{ borderColor: isSelected ? theme.primary : theme.border, background: isSelected ? theme.primary : 'transparent' }}>
+              {isSelected && <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3"><path d="M20 6 9 17l-5-5"/></svg>}
+            </div>
+          )}
           <div className="flex-1 min-w-0">
             <p className="font-semibold truncate" style={{ fontSize: fs(15), color: theme.text }}>
               {entry.title}
