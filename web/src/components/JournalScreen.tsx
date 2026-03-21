@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTheme, NavTarget } from '../App'
 import { db, Entry, Folder, Fasting, getSetting } from '../db'
 import {
-  Block, CATEGORIES, HIGHLIGHT_COLORS, StyleRange, VerseData, applyRanges,
+  Block, CATEGORIES, FOLDER_COLORS, HIGHLIGHT_COLORS, StyleRange, VerseData, applyRanges,
   catColor, catLabel, fmtDate, fmtDateRu,
   genId, getDailyVerseIndex, getVerseColor, getVerseFontFamily, parseBlocks, calcStreak,
 } from '../types'
@@ -10,6 +10,8 @@ import { Plus, X, ChevronDown, ChevronUp, Folder as FolderIcon, Trash2, Edit3, C
 import RTToolbar, { ActiveFormats } from './RTToolbar'
 import VersePicker from './VersePicker'
 import VerseFormatModal from './VerseFormatModal'
+import DailyReadingCard from './DailyReadingCard'
+import DailyReadingModal from './DailyReadingModal'
 
 // HighlightedText: render a text block with styled inline spans
 function HighlightedText({ content, ranges, fontSize, color }: {
@@ -80,6 +82,11 @@ export default function JournalScreen({ navigateToBible }: Props) {
   const [noteOpacity, setNoteOpacity] = useState(0.10)
   const [fastingBorderColor, setFastingBorderColor] = useState('#9C27B0')
 
+  // Daily reading
+  const [readingIsRead, setReadingIsRead] = useState(false)
+  const [readingStreak, setReadingStreak] = useState(0)
+  const [showDailyReading, setShowDailyReading] = useState(false)
+
   // Editor state
   const [editing, setEditing] = useState<Entry | null>(null)
   const [showEditor, setShowEditor] = useState(false)
@@ -87,6 +94,8 @@ export default function JournalScreen({ navigateToBible }: Props) {
   const [edCat, setEdCat] = useState('мысль')
   const [edBlocks, setEdBlocks] = useState<Block[]>([])
   const [edFolderId, setEdFolderId] = useState<number | null>(null)
+  const [edColor, setEdColor] = useState<string | null>(null)
+  const [edDate, setEdDate] = useState(fmtDate(new Date()))
 
   // Rich text editor state
   const [activeBlockId, setActiveBlockId] = useState<string | null>(null)
@@ -138,6 +147,12 @@ export default function JournalScreen({ navigateToBible }: Props) {
       setPlanProgress(null)
     }
 
+    // Daily reading streak
+    const history = await db.daily_reading_history.toArray()
+    const todayStr = fmtDate(new Date())
+    setReadingIsRead(history.some(h => h.date === todayStr && h.completed))
+    setReadingStreak(calcStreak(history.filter(h => h.completed).map(h => h.date)))
+
     // Appearance settings
     const opacityStr = await getSetting('note_color_opacity', '0.10')
     setNoteOpacity(parseFloat(opacityStr) || 0.10)
@@ -166,6 +181,9 @@ export default function JournalScreen({ navigateToBible }: Props) {
     setEdCat('мысль')
     setEdBlocks([{ id: genId(), type: 'text', content: '' }])
     setEdFolderId(activeFolderId === 'all' || activeFolderId === null ? null : activeFolderId as number)
+    setEdColor(null)
+    setEdDate(fmtDate(new Date()))
+    setActiveBlockId(null)
     setShowEditor(true)
   }
 
@@ -175,6 +193,9 @@ export default function JournalScreen({ navigateToBible }: Props) {
     setEdCat(e.category)
     setEdBlocks(parseBlocks(e.content))
     setEdFolderId(e.folder_id)
+    setEdColor(e.color)
+    setEdDate(e.created_at.slice(0, 10))
+    setActiveBlockId(null)
     setShowEditor(true)
   }
 
@@ -184,7 +205,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
 
     const title = edTitle.trim() || textContent.slice(0, 50) || 'Запись'
     const content = JSON.stringify(edBlocks)
-    const now = new Date().toISOString()
+    const createdAt = new Date(edDate + 'T12:00:00').toISOString()
     const linkedVerses = JSON.stringify(
       edBlocks.filter(b => b.type === 'verse').flatMap(b => {
         try { const v = JSON.parse(b.content) as VerseData; return [{ book: v.book, chapter: v.chapter, verse: v.verse }] }
@@ -194,13 +215,14 @@ export default function JournalScreen({ navigateToBible }: Props) {
 
     if (editing?.id) {
       await db.entries.update(editing.id, {
-        title, content, category: edCat, folder_id: edFolderId, linked_verses: linkedVerses,
+        title, content, category: edCat, folder_id: edFolderId,
+        linked_verses: linkedVerses, color: edColor,
       })
     } else {
       await db.entries.add({
         title, content, category: edCat,
-        created_at: now, linked_verses: linkedVerses,
-        folder_id: edFolderId, color: null,
+        created_at: createdAt, linked_verses: linkedVerses,
+        folder_id: edFolderId, color: edColor,
       })
     }
     setShowEditor(false)
@@ -317,6 +339,24 @@ export default function JournalScreen({ navigateToBible }: Props) {
     })
   }, [entries, activeFolderId, searchQ])
 
+  const handleSaveToJournal = async (title: string, verseData: VerseData) => {
+    const block: Block = { id: genId(), type: 'verse', content: JSON.stringify(verseData), boxColor: 'gold', textStyle: 'serif' }
+    await db.entries.add({
+      title, content: JSON.stringify([block]), category: 'цитата',
+      created_at: new Date().toISOString(),
+      linked_verses: JSON.stringify([{ book: verseData.book, chapter: verseData.chapter, verse: verseData.verse }]),
+      folder_id: null, color: null,
+    })
+    setShowDailyReading(false)
+    load()
+  }
+
+  const handleMarkRead = (streak: number) => {
+    setReadingIsRead(true)
+    setReadingStreak(streak)
+    setShowDailyReading(false)
+  }
+
   const { bg, card, border, text, subtext: sub, primary, accent } = theme
 
   return (
@@ -332,6 +372,14 @@ export default function JournalScreen({ navigateToBible }: Props) {
           <Plus size={18} color="#fff" />
         </button>
       </div>
+
+      {/* Daily Reading Card */}
+      <DailyReadingCard
+        isRead={readingIsRead}
+        streak={readingStreak}
+        onOpen={() => setShowDailyReading(true)}
+        fontScale={fontScale}
+      />
 
       {/* Reading plan progress card */}
       {planProgress && planProgress.total > 0 && (
@@ -579,6 +627,38 @@ export default function JournalScreen({ navigateToBible }: Props) {
                 </div>
               )}
 
+              {/* Color picker */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs flex-shrink-0" style={{ color: sub }}>Цвет:</span>
+                <button
+                  onClick={() => setEdColor(null)}
+                  className="w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 active:opacity-70"
+                  style={{ borderColor: edColor === null ? primary : border, background: 'transparent' }}
+                >
+                  {edColor === null && <span style={{ color: primary, fontSize: 10 }}>✓</span>}
+                </button>
+                {FOLDER_COLORS.map(c => (
+                  <button
+                    key={c}
+                    onClick={() => setEdColor(c)}
+                    className="w-6 h-6 rounded-full border-2 flex-shrink-0 active:opacity-70"
+                    style={{ background: c, borderColor: edColor === c ? '#000' : 'transparent' }}
+                  />
+                ))}
+              </div>
+
+              {/* Date picker */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs" style={{ color: sub }}>Дата:</span>
+                <input
+                  type="date"
+                  value={edDate}
+                  onChange={e => setEdDate(e.target.value)}
+                  className="bg-transparent border rounded px-2 py-1 text-xs"
+                  style={{ color: text, borderColor: border }}
+                />
+              </div>
+
               {/* Text / divider blocks */}
               {edBlocks.map(block => (
                 <div key={block.id}>
@@ -674,6 +754,17 @@ export default function JournalScreen({ navigateToBible }: Props) {
               onDivider={addDivider}
             />
           </div>
+        </div>
+      )}
+
+      {/* DailyReadingModal */}
+      {showDailyReading && (
+        <div className="fixed inset-0 z-50">
+          <DailyReadingModal
+            onClose={() => setShowDailyReading(false)}
+            onSaveToJournal={handleSaveToJournal}
+            onMarkRead={handleMarkRead}
+          />
         </div>
       )}
 
