@@ -14,30 +14,17 @@ type View = 'books' | 'chapters' | 'verses'
 
 const cap = (t: string) => (t ? t.charAt(0).toUpperCase() + t.slice(1) : t)
 
-// Group selected verses, merging consecutive verses (same book/chapter, +1) into a single ranged VerseData
+// Build one VerseData per selected verse (sorted), so each verse becomes its own
+// labeled block (e.g. "Мф 1:1" … "Мф 1:2") rather than being merged into a range.
 function buildVerseData(verses: BibleVerse[]): VerseData[] {
-  const sorted = [...verses].sort(
-    (a, b) => a.book.localeCompare(b.book) || a.chapter - b.chapter || a.verse - b.verse
-  )
-  const out: VerseData[] = []
-  let grp: BibleVerse[] = [sorted[0]]
-  const flush = () => {
-    const f = grp[0], l = grp[grp.length - 1]
-    out.push({
-      book: f.book,
-      chapter: f.chapter,
-      verse: f.verse,
-      verseEnd: grp.length > 1 ? l.verse : undefined,
-      text: grp.map(v => cap(v.text)).join(' '),
-    })
-  }
-  for (let i = 1; i < sorted.length; i++) {
-    const p = sorted[i - 1], c = sorted[i]
-    if (p.book === c.book && p.chapter === c.chapter && c.verse === p.verse + 1) grp.push(c)
-    else { flush(); grp = [c] }
-  }
-  flush()
-  return out
+  return [...verses]
+    .sort((a, b) => a.book.localeCompare(b.book) || a.chapter - b.chapter || a.verse - b.verse)
+    .map(v => ({
+      book: v.book,
+      chapter: v.chapter,
+      verse: v.verse,
+      text: cap(v.text),
+    }))
 }
 
 export default function VersePicker({ onSelect, onClose }: Props) {
