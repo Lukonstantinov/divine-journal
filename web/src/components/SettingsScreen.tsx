@@ -161,7 +161,7 @@ export default function SettingsScreen() {
         db.folders.toArray(),
         db.achievements.toArray(),
       ])
-      const data = JSON.stringify({ version: '5.8', entries, bookmarks, readingPlan, dailyNotes, fasting, folders, achievements: achs }, null, 2)
+      const data = JSON.stringify({ version: '5.9', entries, bookmarks, readingPlan, dailyNotes, fasting, folders, achievements: achs }, null, 2)
       const blob = new Blob([data], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -625,7 +625,7 @@ export default function SettingsScreen() {
         {/* About */}
         <div className="mx-3 mb-6 text-center">
           <p className="text-xs" style={{ color: sub }}>Духовный Дневник</p>
-          <p className="text-xs" style={{ color: sub }}>Версия 5.8 (Web)</p>
+          <p className="text-xs" style={{ color: sub }}>Версия 5.9 (Web)</p>
         </div>
       </div>
 

@@ -312,17 +312,18 @@ export default function JournalScreen({ navigateToBible }: Props) {
     ))
   }
 
-  const insertVerse = (v: VerseData) => {
-    const block: Block = {
+  const insertVerse = (verses: VerseData[], color: string = 'gold') => {
+    if (verses.length === 0) { setShowVersePicker(false); return }
+    const newBlocks: Block[] = verses.map(v => ({
       id: genId(), type: 'verse',
       content: JSON.stringify(v),
-      boxColor: 'gold', textStyle: 'serif',
-    }
+      boxColor: color, textStyle: 'serif',
+    }))
     const idx = activeBlockId ? edBlocks.findIndex(b => b.id === activeBlockId) : -1
     setEdBlocks(prev => {
       const next = [...prev]
-      if (idx >= 0) next.splice(idx + 1, 0, block)
-      else next.push(block)
+      if (idx >= 0) next.splice(idx + 1, 0, ...newBlocks)
+      else next.push(...newBlocks)
       return next
     })
     setShowVersePicker(false)
@@ -931,7 +932,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
                             style={{ background: vc.bg, borderColor: vc.border }}
                           >
                             <p className="italic leading-snug" style={{ fontSize: fs(13), color: '#333', fontFamily: ff }}>{v.text}</p>
-                            <p className="text-xs mt-1" style={{ color: vc.border }}>{v.book} {v.chapter}:{v.verse}</p>
+                            <p className="text-xs mt-1" style={{ color: vc.border }}>{v.book} {v.chapter}:{v.verse}{v.verseEnd ? `-${v.verseEnd}` : ''}</p>
                           </button>
                           <button onClick={() => removeBlock(block.id)} className="absolute top-1 right-1 p-1 active:opacity-70">
                             <X size={12} color={sub} />
@@ -1055,7 +1056,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
                       return (
                         <div className="px-3 py-2 rounded-lg border-l-4" style={{ background: vc.bg, borderColor: vc.border }}>
                           <p className="italic" style={{ fontSize: fs(14), color: '#333', fontFamily: ff }}>{v.text}</p>
-                          <p className="text-xs mt-1" style={{ color: vc.border }}>{v.book} {v.chapter}:{v.verse}</p>
+                          <p className="text-xs mt-1" style={{ color: vc.border }}>{v.book} {v.chapter}:{v.verse}{v.verseEnd ? `-${v.verseEnd}` : ''}</p>
                         </div>
                       )
                     } catch { return null }
