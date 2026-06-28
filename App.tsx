@@ -199,7 +199,7 @@ const getBackupDir = (): Directory => {
 };
 
 const collectBackupData = async () => ({
-  version: '5.7',
+  version: '5.8',
   exportDate: new Date().toISOString(),
   entries: await db.getAllAsync('SELECT * FROM entries'),
   bookmarks: await db.getAllAsync('SELECT * FROM bookmarks'),
@@ -1183,14 +1183,8 @@ const JournalScreen = ({ onNavigate, openEntry, onOpenEntryHandled }: { onNaviga
 
   const addVerses = (vs: BibleVerse[], col: string = 'gold') => {
     const sorted = [...vs].sort((a, b) => a.book.localeCompare(b.book) || a.chapter - b.chapter || a.verse - b.verse);
-    const newBs: Block[] = [];
-    let grp: BibleVerse[] = [sorted[0]];
-    for (let i = 1; i < sorted.length; i++) {
-      const p = sorted[i-1], c = sorted[i];
-      if (p.book === c.book && p.chapter === c.chapter && c.verse === p.verse + 1) grp.push(c);
-      else { newBs.push(mkVerseBlock(grp, col)); grp = [c]; }
-    }
-    newBs.push(mkVerseBlock(grp, col));
+    // One block per verse so each keeps its own reference label (Мф 1:1 … Мф 1:2) with separation.
+    const newBs: Block[] = sorted.map(v => mkVerseBlock([v], col));
     const nb: Block = { id: genId(), type: 'text', content: '' };
     setBlocks(bs => { const i = insertId ? bs.findIndex(b => b.id === insertId) : -1; if (i !== -1) { const n = [...bs]; n.splice(i + 1, 0, ...newBs, nb); return n; } return [...bs, ...newBs, nb]; });
     setVpick(false); setInsertId(null);
@@ -3418,7 +3412,7 @@ const SettingsScreen = () => {
           </TouchableOpacity>
         </View>
 
-        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 5.7</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
+        <View style={s.section}><Text style={[s.secTitle, { color: theme.textMuted }]}>О ПРИЛОЖЕНИИ</Text><View style={[s.aboutCard, { backgroundColor: theme.surface }]}><Ionicons name="book" size={40} color={theme.primary} /><Text style={[s.appName, { color: theme.primary }]}>Divine Journal</Text><Text style={[s.appVer, { color: theme.textMuted }]}>Версия 5.8</Text><Text style={[s.appDesc, { color: theme.textSec }]}>Духовный дневник с библейскими стихами, форматированием текста, выделением слов, календарём и планом чтения.</Text></View></View>
       </ScrollView>
       {showGraph && <GraphView entries={allEntries} folders={allFolders} onClose={() => setShowGraph(false)} />}
       {showTimePicker && (

@@ -310,6 +310,7 @@ See `ENHANCEMENT_PLAN.md` for the full roadmap with code-level implementation de
 - **v5.5**: Note color gradient backgrounds (replace dot with transparent card wash), fasting dashed borders, uniform category badges, multi-select batch folder move, note color opacity + fasting border color settings
 - **v5.6**: Bottom sheet SafeArea fix, Bible prev/next chapter navigation, verse capitalization + no numbers in multi-verse notes, expanded font picker (7 fonts) applied to notes, reading plan progress card on Journal page
 - **v5.7**: Compact top section in JournalScreen (reading card, plan card, verse band), remove editor preview block, search result word highlighting + scroll-to-verse in BibleScreen, verse capitalization in DailyReadingModal and daily verse widget, 3 additional Bible fonts (Palatino, Baskerville, Medium — 10 total)
+- **v5.8**: Multi-verse note insertion now adds each selected verse as its own separate block with its own reference label (no longer merges consecutive verses into a single ranged block) — both native (`addVerses`) and web (`VersePicker`)
 
 ### Planned
 - **Feature 2**: "On This Day" — past years memories slider
