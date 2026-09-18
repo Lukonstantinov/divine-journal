@@ -38,7 +38,7 @@ export default function DailyReadingCard({ isRead, streak, onOpen, fontScale }: 
       </div>
       <button
         onClick={onOpen}
-        className="flex items-center gap-1 px-3 py-1.5 rounded-lg font-semibold active:opacity-70"
+        className="flex items-center gap-1 px-3 py-1.5 rounded-lg font-semibold press active:opacity-70"
         style={{
           background: isRead ? '#A5D6A7' : accentColor,
           color: '#fff',

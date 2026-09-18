@@ -54,17 +54,17 @@ export default function RTToolbar({ active, onBold, onItalic, onUnderline, onFon
       style={{ background: card, borderColor: border, scrollbarWidth: 'none' }}
     >
       {/* Bold */}
-      <button style={btnStyle(!!active.bold)} onClick={onBold} className="active:opacity-70 flex-shrink-0">
+      <button style={btnStyle(!!active.bold)} onClick={onBold} className="press active:opacity-70 flex-shrink-0">
         <Bold size={16} />
       </button>
 
       {/* Italic */}
-      <button style={btnStyle(!!active.italic)} onClick={onItalic} className="active:opacity-70 flex-shrink-0">
+      <button style={btnStyle(!!active.italic)} onClick={onItalic} className="press active:opacity-70 flex-shrink-0">
         <Italic size={16} />
       </button>
 
       {/* Underline */}
-      <button style={btnStyle(!!active.underline)} onClick={onUnderline} className="active:opacity-70 flex-shrink-0">
+      <button style={btnStyle(!!active.underline)} onClick={onUnderline} className="press active:opacity-70 flex-shrink-0">
         <Underline size={16} />
       </button>
 
@@ -75,7 +75,7 @@ export default function RTToolbar({ active, onBold, onItalic, onUnderline, onFon
         <button
           style={btnStyle(showSizes)}
           onClick={() => { setShowSizes(v => !v); setShowHighlights(false) }}
-          className="active:opacity-70"
+          className="press active:opacity-70"
         >
           <Type size={16} />
         </button>
@@ -88,7 +88,7 @@ export default function RTToolbar({ active, onBold, onItalic, onUnderline, onFon
               <button
                 key={f.id}
                 onClick={() => { onFontSize(f.id); setShowSizes(false) }}
-                className="w-8 h-8 rounded-lg flex items-center justify-center font-bold active:opacity-70"
+                className="w-8 h-8 rounded-lg flex items-center justify-center font-bold press active:opacity-70"
                 style={{
                   ...f.style,
                   background: active.fontSize === f.id ? primary : 'transparent',
@@ -113,7 +113,7 @@ export default function RTToolbar({ active, onBold, onItalic, onUnderline, onFon
               : undefined,
           }}
           onClick={() => { setShowHighlights(v => !v); setShowSizes(false) }}
-          className="active:opacity-70"
+          className="press active:opacity-70"
         >
           <Highlighter size={16} />
         </button>
@@ -126,7 +126,7 @@ export default function RTToolbar({ active, onBold, onItalic, onUnderline, onFon
               <button
                 key={h.id}
                 onClick={() => { onHighlight(h.id); setShowHighlights(false) }}
-                className="w-7 h-7 rounded-full active:opacity-70"
+                className="w-7 h-7 rounded-full press active:opacity-70"
                 style={{
                   background: h.color,
                   border: `2px solid ${active.highlight === h.id ? primary : border}`,
@@ -137,7 +137,7 @@ export default function RTToolbar({ active, onBold, onItalic, onUnderline, onFon
             {/* Clear highlight */}
             <button
               onClick={() => { onHighlight(null); setShowHighlights(false) }}
-              className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold active:opacity-70"
+              className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold press active:opacity-70"
               style={{ background: 'transparent', color: sub, border: `1px solid ${border}` }}
               title="Убрать"
             >
@@ -153,7 +153,7 @@ export default function RTToolbar({ active, onBold, onItalic, onUnderline, onFon
       <button
         style={btnStyle(false)}
         onClick={onDivider}
-        className="active:opacity-70 flex-shrink-0"
+        className="press active:opacity-70 flex-shrink-0"
         title="Разделитель"
       >
         <Minus size={16} />

@@ -153,3 +153,109 @@ button, [role="button"], .no-select {
   position: absolute;
   height: var(--app-height, 100dvh);
 }
+
+/* ═══════════════════════════════════════════════════════════
+   Design system — v2 UI redesign
+   ═══════════════════════════════════════════════════════════ */
+
+@keyframes backdrop-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes sheet-slide-up {
+  from { transform: translateY(16px); opacity: 0.6; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes tab-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.12); }
+  100% { transform: scale(1); }
+}
+
+/* Backdrop: consistent blur + fade-in on every overlay in the app */
+.modal-backdrop {
+  animation: backdrop-fade-in 0.18s ease-out;
+}
+
+/* Bottom sheet panel: drag handle, elevation, slide-up entrance.
+   Add this class alongside the existing rounded-t-2xl container —
+   it only adds a decorative handle + shadow + motion, it never
+   changes layout/padding of what's already inside. */
+.sheet-panel {
+  position: relative;
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.18), 0 -1px 0 rgba(0, 0, 0, 0.04);
+  animation: sheet-slide-up 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+[data-theme="dark"] .sheet-panel {
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.55), 0 -1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.sheet-panel::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 4px;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.22;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Card elevation — subtle shadow for list rows / cards that want to
+   read as "raised" (entry cards, result rows, stat tiles). Shadow tone
+   flips automatically with the active theme via [data-theme]. */
+.card-elevated {
+  box-shadow: 0 1px 3px rgba(60, 40, 20, 0.08), 0 1px 2px rgba(60, 40, 20, 0.05);
+  transition: box-shadow 0.15s ease, transform 0.1s ease;
+}
+[data-theme="dark"] .card-elevated {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+.card-elevated:active {
+  transform: scale(0.98);
+}
+
+/* Tactile press feedback for buttons/icon-buttons app-wide */
+.press {
+  transition: transform 0.1s ease, opacity 0.1s ease;
+}
+.press:active {
+  transform: scale(0.94);
+  opacity: 0.75;
+}
+
+/* Primary call-to-action button — pill shape, brand color, subtle lift */
+.btn-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 14px;
+  font-weight: 600;
+  transition: transform 0.1s ease, box-shadow 0.15s ease, opacity 0.1s ease;
+  box-shadow: 0 2px 8px rgba(139, 69, 19, 0.25);
+}
+.btn-cta:active {
+  transform: scale(0.96);
+  box-shadow: 0 1px 3px rgba(139, 69, 19, 0.2);
+}
+
+/* Floating tab bar container */
+.tab-bar-float {
+  border-radius: 22px;
+  box-shadow: 0 -2px 20px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.03);
+}
+[data-theme="dark"] .tab-bar-float {
+  box-shadow: 0 -2px 20px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.tab-icon-pop {
+  animation: tab-pop 0.28s ease;
+}

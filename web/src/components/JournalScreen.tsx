@@ -430,13 +430,13 @@ export default function JournalScreen({ navigateToBible }: Props) {
       <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0" style={{ borderColor: border, background: card }}>
         {selectMode ? (
           <>
-            <button onClick={exitSelectMode} className="active:opacity-70"><X size={20} color={sub} /></button>
+            <button onClick={exitSelectMode} className="press active:opacity-70"><X size={20} color={sub} /></button>
             <span className="font-semibold" style={{ fontSize: fs(15), color: text }}>
               {selectedIds.size > 0 ? `Выбрано: ${selectedIds.size}` : 'Выбор записей'}
             </span>
             <button
               onClick={() => setSelectedIds(new Set(filteredEntries.filter(e => e.id).map(e => e.id!)))}
-              className="text-xs active:opacity-70" style={{ color: primary }}
+              className="text-xs press active:opacity-70" style={{ color: primary }}
             >Все</button>
           </>
         ) : (
@@ -445,7 +445,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setSelectMode(true)}
-                className="w-8 h-8 rounded-full flex items-center justify-center active:opacity-70"
+                className="w-8 h-8 rounded-full flex items-center justify-center press active:opacity-70"
                 style={{ background: card, border: `1px solid ${border}` }}
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={sub} strokeWidth="2">
@@ -455,10 +455,10 @@ export default function JournalScreen({ navigateToBible }: Props) {
               </button>
               <button
                 onClick={openNew}
-                className="w-8 h-8 rounded-full flex items-center justify-center active:opacity-70"
-                style={{ background: primary }}
+                className="press w-9 h-9 rounded-full flex items-center justify-center"
+                style={{ background: primary, boxShadow: '0 2px 8px rgba(139, 69, 19, 0.35)' }}
               >
-                <Plus size={18} color="#fff" />
+                <Plus size={19} color="#fff" />
               </button>
             </div>
           </>
@@ -503,7 +503,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
       {dailyVerse && (
         <div className="mx-3 mt-3 rounded-xl overflow-hidden flex-shrink-0" style={{ background: card, border: `1px solid ${border}` }}>
           <button
-            className="w-full flex items-center justify-between px-3 py-2 active:opacity-70"
+            className="w-full flex items-center justify-between px-3 py-2 press active:opacity-70"
             onClick={() => setVerseExpanded(v => !v)}
           >
             <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: primary }}>Стих дня</span>
@@ -529,7 +529,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
               <Calendar size={14} color={accent} />
               <span className="text-xs font-semibold" style={{ color: accent }}>В этот день</span>
             </div>
-            <button onClick={() => setShowMemories(false)} className="active:opacity-70">
+            <button onClick={() => setShowMemories(false)} className="press active:opacity-70">
               <X size={14} color={sub} />
             </button>
           </div>
@@ -538,7 +538,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
               <button
                 key={mem.id}
                 onClick={() => setViewing(mem)}
-                className="flex-shrink-0 rounded-xl p-2.5 text-left active:opacity-70"
+                className="flex-shrink-0 rounded-xl p-2.5 text-left press active:opacity-70"
                 style={{ width: 152, background: bg, border: `1px solid ${border}` }}
               >
                 <p className="text-[10px] mb-1" style={{ color: sub }}>
@@ -604,7 +604,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
               onChange={e => setSearchQ(e.target.value)}
             />
             {searchQ && (
-              <button onClick={() => setSearchQ('')} className="active:opacity-70">
+              <button onClick={() => setSearchQ('')} className="press active:opacity-70">
                 <X size={12} color={sub} />
               </button>
             )}
@@ -612,7 +612,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
           {/* Filter toggle */}
           <button
             onClick={() => setShowFilters(v => !v)}
-            className="w-8 h-8 flex items-center justify-center rounded-xl active:opacity-70 flex-shrink-0"
+            className="w-8 h-8 flex items-center justify-center rounded-xl press active:opacity-70 flex-shrink-0"
             style={{
               background: (showFilters || hasActiveFilters) ? primary + '22' : card,
               border: `1px solid ${(showFilters || hasActiveFilters) ? primary : border}`,
@@ -625,7 +625,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
           {/* Folder manager */}
           <button
             onClick={() => setShowFolderManager(true)}
-            className="w-8 h-8 flex items-center justify-center rounded-xl active:opacity-70 flex-shrink-0"
+            className="w-8 h-8 flex items-center justify-center rounded-xl press active:opacity-70 flex-shrink-0"
             style={{ background: card, border: `1px solid ${border}` }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={sub} strokeWidth="2">
@@ -643,7 +643,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
                 <button
                   key={c.id}
                   onClick={() => setFilterCats(prev => prev.includes(c.id) ? prev.filter(x => x !== c.id) : [...prev, c.id])}
-                  className="px-2 py-0.5 rounded-full text-xs active:opacity-70"
+                  className="px-2 py-0.5 rounded-full text-xs press active:opacity-70"
                   style={{
                     background: filterCats.includes(c.id) ? c.color : 'transparent',
                     color: filterCats.includes(c.id) ? '#fff' : c.color,
@@ -674,7 +674,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
               {hasActiveFilters && (
                 <button
                   onClick={() => { setFilterCats([]); setFilterDateFrom(''); setFilterDateTo(''); setFilterHasVerses(false) }}
-                  className="text-xs active:opacity-70" style={{ color: '#ef4444' }}
+                  className="text-xs press active:opacity-70" style={{ color: '#ef4444' }}
                 >Сбросить</button>
               )}
             </div>
@@ -720,14 +720,14 @@ export default function JournalScreen({ navigateToBible }: Props) {
           style={{ background: card, borderTop: `1px solid ${border}` }}>
           <button
             onClick={() => setShowBatchFolderPicker(true)}
-            className="flex-1 py-2.5 rounded-xl font-semibold text-sm active:opacity-70"
+            className="flex-1 py-2.5 rounded-xl font-semibold text-sm press active:opacity-70"
             style={{ background: primary, color: '#fff' }}
           >
             Переместить ({selectedIds.size})
           </button>
           <button
             onClick={exitSelectMode}
-            className="py-2.5 px-4 rounded-xl text-sm active:opacity-70"
+            className="py-2.5 px-4 rounded-xl text-sm press active:opacity-70"
             style={{ background: border, color: text }}
           >
             Отмена
@@ -737,21 +737,21 @@ export default function JournalScreen({ navigateToBible }: Props) {
 
       {/* Batch folder picker */}
       {showBatchFolderPicker && (
-        <div className="fixed inset-0 z-50 flex flex-col justify-end" style={{ background: 'rgba(0,0,0,0.5)' }}>
-          <div className="rounded-t-2xl" style={{ background: card }}>
+        <div className="fixed inset-0 z-50 flex flex-col justify-end modal-backdrop" style={{ background: 'rgba(0,0,0,0.5)' }}>
+          <div className="rounded-t-2xl sheet-panel" style={{ background: card }}>
             <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: border }}>
               <span className="font-semibold" style={{ color: text }}>Переместить в папку</span>
-              <button onClick={() => setShowBatchFolderPicker(false)} className="active:opacity-70">
+              <button onClick={() => setShowBatchFolderPicker(false)} className="press active:opacity-70">
                 <X size={20} color={sub} />
               </button>
             </div>
             <div className="p-3 flex flex-col gap-1 max-h-64 overflow-y-auto">
               <button onClick={() => batchMove(null)}
-                className="px-4 py-3 rounded-xl text-sm text-left active:opacity-70"
+                className="px-4 py-3 rounded-xl text-sm text-left press active:opacity-70"
                 style={{ color: sub }}>Без папки</button>
               {folders.map(f => (
                 <button key={f.id} onClick={() => batchMove(f.id!)}
-                  className="px-4 py-3 rounded-xl text-sm text-left active:opacity-70"
+                  className="px-4 py-3 rounded-xl text-sm text-left press active:opacity-70"
                   style={{ color: f.color }}>{f.name}</button>
               ))}
             </div>
@@ -761,8 +761,8 @@ export default function JournalScreen({ navigateToBible }: Props) {
 
       {/* FolderManager modal */}
       {showFolderManager && (
-        <div className="fixed inset-0 z-50 flex flex-col justify-end" style={{ background: 'rgba(0,0,0,0.5)' }}>
-          <div className="rounded-t-2xl overflow-hidden" style={{ background: bg, maxHeight: '85dvh' }}>
+        <div className="fixed inset-0 z-50 flex flex-col justify-end modal-backdrop" style={{ background: 'rgba(0,0,0,0.5)' }}>
+          <div className="rounded-t-2xl overflow-hidden sheet-panel" style={{ background: bg, maxHeight: '85dvh' }}>
             <FolderManager
               folders={folders}
               onAdd={handleAddFolder}
@@ -776,20 +776,20 @@ export default function JournalScreen({ navigateToBible }: Props) {
 
       {/* Editor Modal */}
       {showEditor && (
-        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: 'rgba(0,0,0,0.5)' }}>
+        <div className="fixed inset-0 z-50 flex flex-col modal-backdrop" style={{ background: 'rgba(0,0,0,0.5)' }}>
           <div
-            className="flex flex-col mt-auto rounded-t-2xl overflow-hidden"
+            className="flex flex-col mt-auto rounded-t-2xl overflow-hidden sheet-panel"
             style={{ background: bg, maxHeight: 'calc(var(--app-height, 100dvh) * 0.92)' }}
           >
             {/* Editor header */}
             <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0" style={{ borderColor: border, background: card }}>
-              <button onClick={() => setShowEditor(false)} className="active:opacity-70">
+              <button onClick={() => setShowEditor(false)} className="press active:opacity-70">
                 <X size={20} color={sub} />
               </button>
               <span className="font-semibold" style={{ color: text, fontSize: fs(16) }}>
                 {editing ? 'Редактировать' : 'Новая запись'}
               </span>
-              <button onClick={save} className="active:opacity-70">
+              <button onClick={save} className="press active:opacity-70">
                 <Check size={20} color={primary} />
               </button>
             </div>
@@ -810,7 +810,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
                   <button
                     key={c.id}
                     onClick={() => setEdCat(c.id)}
-                    className="flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium active:opacity-70"
+                    className="flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium press active:opacity-70"
                     style={{
                       background: edCat === c.id ? c.color : 'transparent',
                       color: edCat === c.id ? '#fff' : c.color,
@@ -828,7 +828,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
                   <FolderIcon size={14} color={sub} className="flex-shrink-0" />
                   <button
                     onClick={() => setEdFolderId(null)}
-                    className="flex-shrink-0 px-3 py-1 rounded-full text-xs active:opacity-70"
+                    className="flex-shrink-0 px-3 py-1 rounded-full text-xs press active:opacity-70"
                     style={{
                       background: edFolderId === null ? sub : 'transparent',
                       color: edFolderId === null ? '#fff' : sub,
@@ -841,7 +841,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
                     <button
                       key={f.id}
                       onClick={() => setEdFolderId(f.id!)}
-                      className="flex-shrink-0 px-3 py-1 rounded-full text-xs active:opacity-70"
+                      className="flex-shrink-0 px-3 py-1 rounded-full text-xs press active:opacity-70"
                       style={{
                         background: edFolderId === f.id ? f.color : 'transparent',
                         color: edFolderId === f.id ? '#fff' : f.color,
@@ -859,7 +859,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
                 <span className="text-xs flex-shrink-0" style={{ color: sub }}>Цвет:</span>
                 <button
                   onClick={() => setEdColor(null)}
-                  className="w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 active:opacity-70"
+                  className="w-6 h-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 press active:opacity-70"
                   style={{ borderColor: edColor === null ? primary : border, background: 'transparent' }}
                 >
                   {edColor === null && <span style={{ color: primary, fontSize: 10 }}>✓</span>}
@@ -868,7 +868,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
                   <button
                     key={c}
                     onClick={() => setEdColor(c)}
-                    className="w-6 h-6 rounded-full border-2 flex-shrink-0 active:opacity-70"
+                    className="w-6 h-6 rounded-full border-2 flex-shrink-0 press active:opacity-70"
                     style={{ background: c, borderColor: edColor === c ? '#000' : 'transparent' }}
                   />
                 ))}
@@ -912,7 +912,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
                       {edBlocks.length > 1 && (
                         <button
                           onClick={() => removeBlock(block.id)}
-                          className="absolute top-0 right-0 p-1 active:opacity-70"
+                          className="absolute top-0 right-0 p-1 press active:opacity-70"
                         >
                           <X size={12} color={sub} />
                         </button>
@@ -934,7 +934,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
                             <p className="italic leading-snug" style={{ fontSize: fs(13), color: '#333', fontFamily: ff }}>{v.text}</p>
                             <p className="text-xs mt-1" style={{ color: vc.border }}>{v.book} {v.chapter}:{v.verse}{v.verseEnd ? `-${v.verseEnd}` : ''}</p>
                           </button>
-                          <button onClick={() => removeBlock(block.id)} className="absolute top-1 right-1 p-1 active:opacity-70">
+                          <button onClick={() => removeBlock(block.id)} className="absolute top-1 right-1 p-1 press active:opacity-70">
                             <X size={12} color={sub} />
                           </button>
                         </div>
@@ -944,7 +944,7 @@ export default function JournalScreen({ navigateToBible }: Props) {
                   {block.type === 'divider' && (
                     <div className="flex items-center gap-2 my-1">
                       <div className="flex-1 h-px" style={{ background: border }} />
-                      <button onClick={() => removeBlock(block.id)} className="active:opacity-70">
+                      <button onClick={() => removeBlock(block.id)} className="press active:opacity-70">
                         <X size={10} color={sub} />
                       </button>
                     </div>
@@ -955,14 +955,14 @@ export default function JournalScreen({ navigateToBible }: Props) {
               <div className="flex gap-2">
                 <button
                   onClick={addBlock}
-                  className="text-xs px-3 py-1.5 rounded-lg border active:opacity-70"
+                  className="text-xs px-3 py-1.5 rounded-lg border press active:opacity-70"
                   style={{ color: primary, borderColor: primary }}
                 >
                   + Текст
                 </button>
                 <button
                   onClick={() => setShowVersePicker(true)}
-                  className="text-xs px-3 py-1.5 rounded-lg border active:opacity-70"
+                  className="text-xs px-3 py-1.5 rounded-lg border press active:opacity-70"
                   style={{ color: primary, borderColor: primary }}
                 >
                   + Стих
@@ -1015,19 +1015,19 @@ export default function JournalScreen({ navigateToBible }: Props) {
 
       {/* Viewer Modal */}
       {viewing && (
-        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: 'rgba(0,0,0,0.5)' }}>
+        <div className="fixed inset-0 z-50 flex flex-col modal-backdrop" style={{ background: 'rgba(0,0,0,0.5)' }}>
           <div
-            className="flex flex-col mt-auto rounded-t-2xl overflow-hidden"
+            className="flex flex-col mt-auto rounded-t-2xl overflow-hidden sheet-panel"
             style={{ background: bg, maxHeight: 'calc(var(--app-height, 100dvh) * 0.92)' }}
           >
             <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0" style={{ borderColor: border, background: card }}>
-              <button onClick={() => setViewing(null)} className="active:opacity-70">
+              <button onClick={() => setViewing(null)} className="press active:opacity-70">
                 <X size={20} color={sub} />
               </button>
               <span className="font-semibold flex-1 mx-3 truncate" style={{ color: text, fontSize: fs(16) }}>
                 {viewing.title}
               </span>
-              <button onClick={() => { setViewing(null); openEdit(viewing) }} className="active:opacity-70">
+              <button onClick={() => { setViewing(null); openEdit(viewing) }} className="press active:opacity-70">
                 <Edit3 size={18} color={primary} />
               </button>
             </div>
@@ -1081,7 +1081,7 @@ function FolderChip({ label, active, color, onClick, theme }: {
   return (
     <button
       onClick={onClick}
-      className="flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium active:opacity-70"
+      className="flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium press active:opacity-70"
       style={{
         background: active ? color : 'transparent',
         color: active ? '#fff' : color,
@@ -1125,11 +1125,12 @@ function EntryCard({ entry, theme, fontScale, noteOpacity, isFasting, fastingBor
 
   return (
     <div
-      className="rounded-xl overflow-hidden"
+      className="rounded-xl overflow-hidden card-elevated"
       style={{ background: cardBg, border: cardBorder }}
     >
       <button
         className="w-full text-left px-4 pt-3 pb-2 active:opacity-80"
+        style={{ transition: 'opacity 0.1s ease' }}
         onClick={onTap}
         onContextMenu={e => { e.preventDefault(); onLongPress() }}
       >
@@ -1158,7 +1159,7 @@ function EntryCard({ entry, theme, fontScale, noteOpacity, isFasting, fastingBor
               {catLabel(entry.category)}
             </span>
             <button
-              className="p-1 active:opacity-70"
+              className="p-1 press active:opacity-70"
               onClick={e => { e.stopPropagation(); setExpanded(v => !v) }}
             >
               {expanded ? <ChevronUp size={14} color={theme.subtext} /> : <ChevronDown size={14} color={theme.subtext} />}
@@ -1183,7 +1184,7 @@ function EntryCard({ entry, theme, fontScale, noteOpacity, isFasting, fastingBor
           ))}
           <div className="flex gap-3 mt-3 border-t pt-2" style={{ borderColor: theme.border }}>
             <button
-              className="flex items-center gap-1 text-xs active:opacity-70"
+              className="flex items-center gap-1 text-xs press active:opacity-70"
               style={{ color: theme.primary }}
               onClick={e => { e.stopPropagation(); onEdit() }}
             >
@@ -1191,7 +1192,7 @@ function EntryCard({ entry, theme, fontScale, noteOpacity, isFasting, fastingBor
             </button>
             {!confirmDel ? (
               <button
-                className="flex items-center gap-1 text-xs active:opacity-70"
+                className="flex items-center gap-1 text-xs press active:opacity-70"
                 style={{ color: '#ef4444' }}
                 onClick={e => { e.stopPropagation(); setConfirmDel(true) }}
               >
@@ -1200,14 +1201,14 @@ function EntryCard({ entry, theme, fontScale, noteOpacity, isFasting, fastingBor
             ) : (
               <div className="flex gap-2 items-center">
                 <button
-                  className="text-xs px-2 py-0.5 rounded active:opacity-70"
+                  className="text-xs px-2 py-0.5 rounded press active:opacity-70"
                   style={{ background: '#ef4444', color: '#fff' }}
                   onClick={e => { e.stopPropagation(); onDelete() }}
                 >
                   Удалить
                 </button>
                 <button
-                  className="text-xs active:opacity-70"
+                  className="text-xs press active:opacity-70"
                   style={{ color: theme.subtext }}
                   onClick={e => { e.stopPropagation(); setConfirmDel(false) }}
                 >

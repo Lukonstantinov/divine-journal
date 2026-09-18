@@ -30,7 +30,7 @@ export default function VerseFormatModal({ verse, onSave, onClose }: Props) {
   return (
     <div className="ios-modal z-50 flex flex-col modal-backdrop" style={{ background: 'rgba(0,0,0,0.5)' }}>
       <div
-        className="flex flex-col mt-auto rounded-t-2xl overflow-hidden"
+        className="flex flex-col mt-auto rounded-t-2xl overflow-hidden sheet-panel"
         style={{ background: bg, maxHeight: 'calc(var(--app-height, 100dvh) * 0.85)' }}
       >
         {/* Header */}
@@ -38,9 +38,9 @@ export default function VerseFormatModal({ verse, onSave, onClose }: Props) {
           className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0"
           style={{ borderColor: border, background: card }}
         >
-          <button onClick={onClose} className="active:opacity-70"><X size={20} color={sub} /></button>
+          <button onClick={onClose} className="press active:opacity-70"><X size={20} color={sub} /></button>
           <span className="font-semibold" style={{ color: text, fontSize: fs(16) }}>Форматирование стиха</span>
-          <button onClick={handleSave} className="active:opacity-70"><Check size={20} color={primary} /></button>
+          <button onClick={handleSave} className="press active:opacity-70"><Check size={20} color={primary} /></button>
         </div>
 
         <div className="flex-1 overflow-y-auto scroll-area p-4 flex flex-col gap-5">
@@ -70,7 +70,7 @@ export default function VerseFormatModal({ verse, onSave, onClose }: Props) {
                 <button
                   key={c.id}
                   onClick={() => setBoxColor(c.id)}
-                  className="flex flex-col items-center gap-1 px-3 py-2.5 rounded-xl active:opacity-70"
+                  className="flex flex-col items-center gap-1 px-3 py-2.5 rounded-xl press active:opacity-70"
                   style={{
                     background: c.bg,
                     border: `2px solid ${boxColor === c.id ? c.border : border}`,
@@ -90,7 +90,7 @@ export default function VerseFormatModal({ verse, onSave, onClose }: Props) {
               Шрифт
             </p>
             <button
-              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl active:opacity-70"
+              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl press active:opacity-70"
               style={{ background: card, border: `1px solid ${border}` }}
               onClick={() => setShowFonts(v => !v)}
             >
@@ -105,7 +105,7 @@ export default function VerseFormatModal({ verse, onSave, onClose }: Props) {
                   <button
                     key={f.id}
                     onClick={() => { setFontId(f.id); setShowFonts(false) }}
-                    className="w-full flex items-center gap-3 px-4 py-2.5 border-b last:border-0 active:opacity-70"
+                    className="w-full flex items-center gap-3 px-4 py-2.5 border-b last:border-0 press active:opacity-70"
                     style={{ borderColor: border, background: fontId === f.id ? primary + '18' : 'transparent' }}
                   >
                     <span style={{ fontFamily: f.family, fontSize: fs(16), color: text, flex: 1, textAlign: 'left' }}>Аа</span>

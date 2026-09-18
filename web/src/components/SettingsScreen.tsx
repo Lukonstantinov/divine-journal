@@ -161,7 +161,7 @@ export default function SettingsScreen() {
         db.folders.toArray(),
         db.achievements.toArray(),
       ])
-      const data = JSON.stringify({ version: '5.10', entries, bookmarks, readingPlan, dailyNotes, fasting, folders, achievements: achs }, null, 2)
+      const data = JSON.stringify({ version: '5.11', entries, bookmarks, readingPlan, dailyNotes, fasting, folders, achievements: achs }, null, 2)
       const blob = new Blob([data], { type: 'application/json' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -372,7 +372,7 @@ export default function SettingsScreen() {
               <button
                 key={id}
                 onClick={() => setThemeId(id)}
-                className="flex-1 flex flex-col items-center gap-1.5 py-3 rounded-xl active:opacity-70"
+                className="flex-1 flex flex-col items-center gap-1.5 py-3 rounded-xl press active:opacity-70"
                 style={{
                   background: themeId === id ? primary : THEMES[id].bg,
                   border: `2px solid ${themeId === id ? primary : border}`,
@@ -394,7 +394,7 @@ export default function SettingsScreen() {
               <button
                 key={id}
                 onClick={() => setFontScale(id)}
-                className="flex-1 py-2 rounded-xl text-sm font-semibold active:opacity-70"
+                className="flex-1 py-2 rounded-xl text-sm font-semibold press active:opacity-70"
                 style={{
                   background: fontScale === id ? primary : 'transparent',
                   color: fontScale === id ? '#fff' : sub,
@@ -415,7 +415,7 @@ export default function SettingsScreen() {
               <button
                 key={id}
                 onClick={() => setBibleFont(id)}
-                className="flex items-center gap-3 px-3 py-2.5 rounded-xl active:opacity-70"
+                className="flex items-center gap-3 px-3 py-2.5 rounded-xl press active:opacity-70"
                 style={{
                   background: bibleFont === id ? primary + '20' : 'transparent',
                   border: `1px solid ${bibleFont === id ? primary : border}`,
@@ -441,7 +441,7 @@ export default function SettingsScreen() {
                   setShowVerseUsage(next)
                   await setSetting('show_verse_usage', next ? '1' : '0')
                 }}
-                className="w-12 h-6 rounded-full transition-colors relative active:opacity-70"
+                className="w-12 h-6 rounded-full transition-colors relative press active:opacity-70"
                 style={{ background: showVerseUsage ? primary : border }}
               >
                 <div className="w-5 h-5 rounded-full bg-white absolute top-0.5 transition-all"
@@ -458,7 +458,7 @@ export default function SettingsScreen() {
                     <button
                       key={c}
                       onClick={async () => { setVerseBadgeColor(c); await setSetting('verse_badge_color', c) }}
-                      className="w-7 h-7 rounded-full border-2 active:opacity-70"
+                      className="w-7 h-7 rounded-full border-2 press active:opacity-70"
                       style={{ background: c, borderColor: verseBadgeColor === c ? '#000' : 'transparent' }}
                     />
                   ))}
@@ -518,7 +518,7 @@ export default function SettingsScreen() {
                 <button
                   key={c}
                   onClick={async () => { setFastingBorderColor(c); await setSetting('fasting_border_color', c) }}
-                  className="w-7 h-7 rounded-full border-2 active:opacity-70"
+                  className="w-7 h-7 rounded-full border-2 press active:opacity-70"
                   style={{ background: c, borderColor: fastingBorderColor === c ? '#000' : 'transparent' }}
                 />
               ))}
@@ -530,7 +530,7 @@ export default function SettingsScreen() {
         <Section title="Граф связей">
           <button
             onClick={() => setShowGraph(true)}
-            className="flex items-center gap-3 px-4 py-3 w-full active:opacity-70"
+            className="flex items-center gap-3 px-4 py-3 w-full press active:opacity-70"
           >
             <span className="text-xl">🕸️</span>
             <span style={{ fontSize: fs(14), color: text }}>Открыть граф связей</span>
@@ -550,7 +550,7 @@ export default function SettingsScreen() {
                   setAutoBackupEnabled(next)
                   await setSetting('autoBackupEnabled', next ? '1' : '0')
                 }}
-                className="w-12 h-6 rounded-full transition-colors relative active:opacity-70"
+                className="w-12 h-6 rounded-full transition-colors relative press active:opacity-70"
                 style={{ background: autoBackupEnabled ? primary : border }}
               >
                 <div className="w-5 h-5 rounded-full bg-white absolute top-0.5 transition-all"
@@ -603,18 +603,18 @@ export default function SettingsScreen() {
         {/* ── Data ────────────────────────────────────── */}
         <Section title="Данные">
           <div className="flex flex-col divide-y" style={{ '--tw-divide-opacity': '1' } as never}>
-            <button onClick={exportData} className="flex items-center gap-3 px-4 py-3 active:opacity-70">
+            <button onClick={exportData} className="flex items-center gap-3 px-4 py-3 press active:opacity-70">
               <Download size={18} color={primary} />
               <span style={{ fontSize: fs(14), color: text }}>Экспорт данных</span>
               {exportMsg && <span className="ml-auto text-xs" style={{ color: '#22c55e' }}>{exportMsg}</span>}
             </button>
-            <button onClick={importData} className="flex items-center gap-3 px-4 py-3 active:opacity-70"
+            <button onClick={importData} className="flex items-center gap-3 px-4 py-3 press active:opacity-70"
               style={{ borderTop: `1px solid ${border}` }}>
               <Upload size={18} color={primary} />
               <span style={{ fontSize: fs(14), color: text }}>Импорт данных</span>
               {importMsg && <span className="ml-auto text-xs" style={{ color: importMsg.includes('Ошибка') ? '#ef4444' : '#22c55e' }}>{importMsg}</span>}
             </button>
-            <button onClick={clearAll} className="flex items-center gap-3 px-4 py-3 active:opacity-70"
+            <button onClick={clearAll} className="flex items-center gap-3 px-4 py-3 press active:opacity-70"
               style={{ borderTop: `1px solid ${border}` }}>
               <Trash2 size={18} color="#ef4444" />
               <span style={{ fontSize: fs(14), color: '#ef4444' }}>Удалить все данные</span>
@@ -625,7 +625,7 @@ export default function SettingsScreen() {
         {/* About */}
         <div className="mx-3 mb-6 text-center">
           <p className="text-xs" style={{ color: sub }}>Духовный Дневник</p>
-          <p className="text-xs" style={{ color: sub }}>Версия 5.10 (Web)</p>
+          <p className="text-xs" style={{ color: sub }}>Версия 5.11 (Web)</p>
         </div>
       </div>
 
@@ -635,7 +635,7 @@ export default function SettingsScreen() {
           <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0"
             style={{ background: card, borderColor: border }}>
             <span className="font-semibold" style={{ color: text }}>Граф связей</span>
-            <button onClick={() => setShowGraph(false)} className="active:opacity-70">
+            <button onClick={() => setShowGraph(false)} className="press active:opacity-70">
               <span style={{ color: sub, fontSize: 20 }}>✕</span>
             </button>
           </div>

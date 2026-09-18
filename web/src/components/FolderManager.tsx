@@ -88,7 +88,7 @@ export default function FolderManager({ folders, onAdd, onEdit, onDelete, onClos
             <button
               key={c}
               onClick={() => setColor(c)}
-              className="w-8 h-8 rounded-full active:opacity-70"
+              className="w-8 h-8 rounded-full press active:opacity-70"
               style={{ background: c, border: `2px solid ${color === c ? text : 'transparent'}` }}
             />
           ))}
@@ -103,7 +103,7 @@ export default function FolderManager({ folders, onAdd, onEdit, onDelete, onClos
             <button
               key={ic}
               onClick={() => setIcon(ic)}
-              className="w-9 h-9 rounded-xl flex items-center justify-center active:opacity-70"
+              className="w-9 h-9 rounded-xl flex items-center justify-center press active:opacity-70"
               style={{
                 background: icon === ic ? color : card,
                 color: icon === ic ? '#fff' : sub,
@@ -127,14 +127,14 @@ export default function FolderManager({ folders, onAdd, onEdit, onDelete, onClos
       <div className="flex gap-3">
         <button
           onClick={handleSave}
-          className="flex-1 py-2 rounded-xl font-semibold active:opacity-70"
+          className="flex-1 py-2 rounded-xl font-semibold press active:opacity-70"
           style={{ background: primary, color: '#fff', fontSize: fs(14) }}
         >
           {isNew ? 'Создать' : 'Сохранить'}
         </button>
         <button
           onClick={cancelEdit}
-          className="px-4 py-2 rounded-xl active:opacity-70"
+          className="px-4 py-2 rounded-xl press active:opacity-70"
           style={{ border: `1px solid ${border}`, color: sub, fontSize: fs(14) }}
         >
           Отмена
@@ -146,7 +146,7 @@ export default function FolderManager({ folders, onAdd, onEdit, onDelete, onClos
   return (
     <div className="ios-modal z-50 flex flex-col modal-backdrop" style={{ background: 'rgba(0,0,0,0.5)' }}>
       <div
-        className="flex flex-col mt-auto rounded-t-2xl overflow-hidden"
+        className="flex flex-col mt-auto rounded-t-2xl overflow-hidden sheet-panel"
         style={{ background: bg, maxHeight: 'calc(var(--app-height, 100dvh) * 0.85)' }}
       >
         {/* Header */}
@@ -154,9 +154,9 @@ export default function FolderManager({ folders, onAdd, onEdit, onDelete, onClos
           className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0"
           style={{ borderColor: border, background: card }}
         >
-          <button onClick={onClose} className="active:opacity-70"><X size={20} color={sub} /></button>
+          <button onClick={onClose} className="press active:opacity-70"><X size={20} color={sub} /></button>
           <span className="font-semibold" style={{ color: text, fontSize: fs(16) }}>Папки</span>
-          <button onClick={openNew} className="active:opacity-70">
+          <button onClick={openNew} className="press active:opacity-70">
             <Plus size={20} color={primary} />
           </button>
         </div>
@@ -187,28 +187,28 @@ export default function FolderManager({ folders, onAdd, onEdit, onDelete, onClos
                     {ICON_MAP[f.icon] ?? <FolderIcon size={18} />}
                   </div>
                   <span className="flex-1 font-medium" style={{ color: text, fontSize: fs(14) }}>{f.name}</span>
-                  <button onClick={() => openEdit(f)} className="p-1.5 active:opacity-70">
+                  <button onClick={() => openEdit(f)} className="p-1.5 press active:opacity-70">
                     <Edit3 size={16} color={sub} />
                   </button>
                   {confirmDeleteId === f.id ? (
                     <div className="flex gap-1">
                       <button
                         onClick={async () => { await onDelete(f.id!); setConfirmDeleteId(null) }}
-                        className="text-xs px-2 py-1 rounded-lg active:opacity-70"
+                        className="text-xs px-2 py-1 rounded-lg press active:opacity-70"
                         style={{ background: '#ef4444', color: '#fff' }}
                       >
                         Удалить
                       </button>
                       <button
                         onClick={() => setConfirmDeleteId(null)}
-                        className="text-xs px-2 py-1 rounded-lg active:opacity-70"
+                        className="text-xs px-2 py-1 rounded-lg press active:opacity-70"
                         style={{ border: `1px solid ${border}`, color: sub }}
                       >
                         Отмена
                       </button>
                     </div>
                   ) : (
-                    <button onClick={() => setConfirmDeleteId(f.id!)} className="p-1.5 active:opacity-70">
+                    <button onClick={() => setConfirmDeleteId(f.id!)} className="p-1.5 press active:opacity-70">
                       <Trash2 size={16} color="#ef4444" />
                     </button>
                   )}

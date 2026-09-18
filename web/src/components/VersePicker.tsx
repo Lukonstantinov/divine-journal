@@ -85,7 +85,7 @@ export default function VersePicker({ onSelect, onClose }: Props) {
       style={{ background: 'rgba(0,0,0,0.5)' }}
     >
       <div
-        className="flex flex-col mt-auto rounded-t-2xl overflow-hidden"
+        className="flex flex-col mt-auto rounded-t-2xl overflow-hidden sheet-panel"
         style={{ background: bg, maxHeight: 'calc(var(--app-height, 100dvh) * 0.9)' }}
       >
         {/* Header */}
@@ -99,7 +99,7 @@ export default function VersePicker({ onSelect, onClose }: Props) {
               else if (view === 'chapters') setView('books')
               else onClose()
             }}
-            className="active:opacity-70"
+            className="press active:opacity-70"
           >
             {view === 'books' ? <X size={20} color={sub} /> : <ChevronLeft size={20} color={primary} />}
           </button>
@@ -111,7 +111,7 @@ export default function VersePicker({ onSelect, onClose }: Props) {
           <button
             onClick={handleInsert}
             disabled={selected.size === 0}
-            className="active:opacity-70 font-semibold"
+            className="press active:opacity-70 font-semibold"
             style={{ color: selected.size > 0 ? primary : sub, fontSize: fs(15) }}
           >
             Добавить
@@ -127,7 +127,7 @@ export default function VersePicker({ onSelect, onClose }: Props) {
                 <button
                   key={c.id}
                   onClick={() => setColor(c.id)}
-                  className="flex flex-col items-center gap-1 flex-shrink-0 active:opacity-70"
+                  className="flex flex-col items-center gap-1 flex-shrink-0 press active:opacity-70"
                 >
                   <span
                     className="rounded-full"
@@ -162,7 +162,7 @@ export default function VersePicker({ onSelect, onClose }: Props) {
               <button
                 key={f}
                 onClick={() => setFilter(f)}
-                className="px-3 py-1 rounded-full text-xs font-medium active:opacity-70"
+                className="px-3 py-1 rounded-full text-xs font-medium press active:opacity-70"
                 style={{
                   background: filter === f ? primary : 'transparent',
                   color: filter === f ? '#fff' : sub,
@@ -181,7 +181,7 @@ export default function VersePicker({ onSelect, onClose }: Props) {
           {view === 'books' && filteredBooks.map(b => (
             <button
               key={b.name}
-              className="w-full flex items-center justify-between px-4 py-3 border-b active:opacity-70"
+              className="w-full flex items-center justify-between px-4 py-3 border-b press active:opacity-70"
               style={{ borderColor: border }}
               onClick={() => { setBook(b.name); setView('chapters') }}
             >
@@ -200,7 +200,7 @@ export default function VersePicker({ onSelect, onClose }: Props) {
                 <button
                   key={ch}
                   onClick={() => { setChapter(ch); setView('verses') }}
-                  className="aspect-square rounded-xl flex items-center justify-center font-semibold active:opacity-70"
+                  className="aspect-square rounded-xl flex items-center justify-center font-semibold press active:opacity-70"
                   style={{ background: card, color: text, fontSize: fs(15), border: `1px solid ${border}` }}
                 >
                   {ch}
@@ -215,7 +215,7 @@ export default function VersePicker({ onSelect, onClose }: Props) {
             return (
               <button
                 key={v.verse}
-                className="w-full flex items-start gap-3 px-4 py-3 border-b active:opacity-70"
+                className="w-full flex items-start gap-3 px-4 py-3 border-b press active:opacity-70"
                 style={{
                   borderColor: border,
                   background: isSelected ? primary + '18' : 'transparent',

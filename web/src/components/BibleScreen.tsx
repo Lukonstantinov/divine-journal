@@ -176,7 +176,7 @@ export default function BibleScreen({ navTarget, clearNavTarget }: Props) {
         <div className="flex items-center px-4 py-3 gap-2">
           {view !== 'books' && (
             <button
-              className="active:opacity-70 mr-1"
+              className="press active:opacity-70 mr-1"
               onClick={() => {
                 if (view === 'verses') { setView('chapters'); setHighlightTerm(null) }
                 else if (view === 'chapters') setView('books')
@@ -198,7 +198,7 @@ export default function BibleScreen({ navTarget, clearNavTarget }: Props) {
               <button
                 key={f}
                 onClick={() => setFilter(f)}
-                className="px-3 py-1 rounded-full text-xs font-medium active:opacity-70"
+                className="px-3 py-1 rounded-full text-xs font-medium press active:opacity-70"
                 style={{
                   background: filter === f ? primary : 'transparent',
                   color: filter === f ? '#fff' : sub,
@@ -223,7 +223,7 @@ export default function BibleScreen({ navTarget, clearNavTarget }: Props) {
             return (
               <button
                 key={book.name}
-                className="w-full flex items-center justify-between px-4 py-3 border-b active:opacity-70"
+                className="w-full flex items-center justify-between px-4 py-3 border-b press active:opacity-70"
                 style={{ borderColor: border }}
                 onClick={() => { setSelectedBook(book.name); setView('chapters') }}
               >
@@ -256,7 +256,7 @@ export default function BibleScreen({ navTarget, clearNavTarget }: Props) {
               <button
                 key={ch}
                 onClick={() => { setSelectedChapter(ch); setView('verses') }}
-                className="aspect-square rounded-xl flex items-center justify-center font-semibold active:opacity-70"
+                className="aspect-square rounded-xl flex items-center justify-center font-semibold press active:opacity-70"
                 style={{
                   background: card,
                   color: text,
@@ -309,7 +309,7 @@ export default function BibleScreen({ navTarget, clearNavTarget }: Props) {
                     {usageCount > 0 && (
                       <button
                         onClick={() => setUsageModalVerseId(usageKey)}
-                        className="active:opacity-70"
+                        className="press active:opacity-70"
                       >
                         <span
                           className="text-xs font-bold px-1.5 py-0.5 rounded-full"
@@ -320,7 +320,7 @@ export default function BibleScreen({ navTarget, clearNavTarget }: Props) {
                       </button>
                     )}
                     <button
-                      className="flex-shrink-0 mt-0.5 active:opacity-70"
+                      className="flex-shrink-0 mt-0.5 press active:opacity-70"
                       onClick={() => toggleBookmark(verseId)}
                     >
                       {bookmarked
@@ -342,7 +342,7 @@ export default function BibleScreen({ navTarget, clearNavTarget }: Props) {
           >
             <button
               onClick={goPrevChapter}
-              className="flex items-center gap-1 active:opacity-70"
+              className="flex items-center gap-1 press active:opacity-70"
               style={{ color: selectedChapter === 1 && BIBLE_BOOKS[0]?.name === selectedBook ? sub : primary }}
             >
               <ChevronLeft size={18} />
@@ -350,14 +350,14 @@ export default function BibleScreen({ navTarget, clearNavTarget }: Props) {
             </button>
             <button
               onClick={() => setView('chapters')}
-              className="active:opacity-70"
+              className="press active:opacity-70"
               style={{ color: sub, fontSize: fs(13) }}
             >
               {selectedBook} {selectedChapter}
             </button>
             <button
               onClick={goNextChapter}
-              className="flex items-center gap-1 active:opacity-70"
+              className="flex items-center gap-1 press active:opacity-70"
               style={{ color: primary }}
             >
               <span style={{ fontSize: fs(13) }}>Вперёд</span>
@@ -371,14 +371,14 @@ export default function BibleScreen({ navTarget, clearNavTarget }: Props) {
       {usageModalVerseId && (
         <div className="ios-modal z-50 flex flex-col modal-backdrop" style={{ background: 'rgba(0,0,0,0.5)' }}>
           <div
-            className="flex flex-col mt-auto rounded-t-2xl overflow-hidden"
+            className="flex flex-col mt-auto rounded-t-2xl overflow-hidden sheet-panel"
             style={{ background: bg, maxHeight: 'calc(var(--app-height, 100dvh) * 0.7)' }}
           >
             <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0" style={{ borderColor: border, background: card }}>
               <span className="font-semibold" style={{ color: text, fontSize: fs(15) }}>
                 Записи со стихом ({usageEntries.length})
               </span>
-              <button onClick={() => setUsageModalVerseId(null)} className="active:opacity-70">
+              <button onClick={() => setUsageModalVerseId(null)} className="press active:opacity-70">
                 <X size={20} color={sub} />
               </button>
             </div>

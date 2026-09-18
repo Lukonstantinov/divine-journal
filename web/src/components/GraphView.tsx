@@ -214,14 +214,14 @@ export default function GraphView({ onClose }: Props) {
   return (
     <div className="ios-modal z-50 flex flex-col modal-backdrop" style={{ background: 'rgba(0,0,0,0.5)' }}>
       <div
-        className="flex flex-col mt-auto rounded-t-2xl overflow-hidden"
+        className="flex flex-col mt-auto rounded-t-2xl overflow-hidden sheet-panel"
         style={{ background: bg, maxHeight: 'calc(var(--app-height, 100dvh) * 0.9)' }}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0" style={{ borderColor: border, background: card }}>
-          <button onClick={onClose} className="active:opacity-70"><X size={20} color={sub} /></button>
+          <button onClick={onClose} className="press active:opacity-70"><X size={20} color={sub} /></button>
           <span className="font-semibold" style={{ color: text, fontSize: fs(16) }}>Граф связей</span>
-          <button onClick={loadGraph} className="active:opacity-70">
+          <button onClick={loadGraph} className="press active:opacity-70">
             <RefreshCw size={18} color={primary} />
           </button>
         </div>

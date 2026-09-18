@@ -134,7 +134,7 @@ export default function SearchScreen({ navigateToBible }: Props) {
           <button
             key={id}
             onClick={() => setActiveTab(id)}
-            className="flex-1 flex items-center justify-center gap-2 py-3 active:opacity-70 border-b-2 transition-colors"
+            className="flex-1 flex items-center justify-center gap-2 py-3 press active:opacity-70 border-b-2 transition-colors"
             style={{
               borderColor: activeTab === id ? primary : 'transparent',
               color: activeTab === id ? primary : sub,
@@ -161,7 +161,7 @@ export default function SearchScreen({ navigateToBible }: Props) {
                 onChange={(e: { target: { value: string } }) => setBibleQuery(e.target.value)}
               />
               {bibleQuery && (
-                <button onClick={() => { setBibleQuery(''); setBibleResults([]) }} className="active:opacity-70">
+                <button onClick={() => { setBibleQuery(''); setBibleResults([]) }} className="press active:opacity-70">
                   <X size={16} color={sub} />
                 </button>
               )}
@@ -173,7 +173,7 @@ export default function SearchScreen({ navigateToBible }: Props) {
                 <button
                   key={t}
                   onClick={() => setTestamentFilter(t)}
-                  className="flex-shrink-0 px-2.5 py-1 rounded-full text-xs font-medium active:opacity-70"
+                  className="flex-shrink-0 px-2.5 py-1 rounded-full text-xs font-medium press active:opacity-70"
                   style={{
                     background: testamentFilter === t ? primary : 'transparent',
                     color: testamentFilter === t ? '#fff' : sub,
@@ -185,7 +185,7 @@ export default function SearchScreen({ navigateToBible }: Props) {
               ))}
               <button
                 onClick={() => setWholeWord(w => !w)}
-                className="flex-shrink-0 px-2.5 py-1 rounded-full text-xs font-medium active:opacity-70"
+                className="flex-shrink-0 px-2.5 py-1 rounded-full text-xs font-medium press active:opacity-70"
                 style={{
                   background: wholeWord ? primary : 'transparent',
                   color: wholeWord ? '#fff' : sub,
@@ -224,7 +224,7 @@ export default function SearchScreen({ navigateToBible }: Props) {
             {bibleResults.slice(0, visibleCount).map((r: BibleResult) => (
               <button
                 key={r.id}
-                className="w-full text-left px-4 py-3 border-b active:opacity-70"
+                className="w-full text-left px-4 py-3 border-b press active:opacity-70"
                 style={{ borderColor: border }}
                 onClick={() => navigateToBible({ book: r.book, chapter: r.chapter, verse: r.verse, highlightTerm: bibleQuery.trim() })}
               >
@@ -241,7 +241,7 @@ export default function SearchScreen({ navigateToBible }: Props) {
             {bibleResults.length > visibleCount && (
               <button
                 onClick={() => setVisibleCount(c => c + PAGE_SIZE)}
-                className="w-full text-center py-3 active:opacity-70"
+                className="w-full text-center py-3 press active:opacity-70"
                 style={{ color: primary, fontSize: fs(13), fontWeight: 600 }}
               >
                 Показать ещё ({Math.min(PAGE_SIZE, bibleResults.length - visibleCount)})
@@ -267,7 +267,7 @@ export default function SearchScreen({ navigateToBible }: Props) {
                 onChange={(e: { target: { value: string } }) => setJournalQuery(e.target.value)}
               />
               {journalQuery && (
-                <button onClick={() => setJournalQuery('')} className="active:opacity-70">
+                <button onClick={() => setJournalQuery('')} className="press active:opacity-70">
                   <X size={16} color={sub} />
                 </button>
               )}
@@ -279,7 +279,7 @@ export default function SearchScreen({ navigateToBible }: Props) {
                 <button
                   key={c.id}
                   onClick={() => setFilterCats((prev: string[]) => prev.includes(c.id) ? prev.filter((x: string) => x !== c.id) : [...prev, c.id])}
-                  className="flex-shrink-0 px-2 py-0.5 rounded-full text-xs active:opacity-70"
+                  className="flex-shrink-0 px-2 py-0.5 rounded-full text-xs press active:opacity-70"
                   style={{
                     background: filterCats.includes(c.id) ? c.color : 'transparent',
                     color: filterCats.includes(c.id) ? '#fff' : c.color,
@@ -304,7 +304,7 @@ export default function SearchScreen({ navigateToBible }: Props) {
               {(filterCats.length > 0 || filterDateFrom || filterDateTo) && (
                 <button
                   onClick={() => { setFilterCats([]); setFilterDateFrom(''); setFilterDateTo('') }}
-                  className="text-xs px-2 py-0.5 rounded active:opacity-70"
+                  className="text-xs px-2 py-0.5 rounded press active:opacity-70"
                   style={{ color: '#ef4444', border: `1px solid #ef4444` }}
                 >×</button>
               )}
@@ -334,7 +334,7 @@ export default function SearchScreen({ navigateToBible }: Props) {
                 {journalResults.map((entry: Entry) => (
                   <button
                     key={entry.id}
-                    className="w-full text-left px-4 py-3 active:opacity-70"
+                    className="w-full text-left px-4 py-3 press active:opacity-70"
                     style={{ borderBottom: `1px solid ${border}` }}
                     onClick={() => setViewingEntry(entry)}
                   >
@@ -369,14 +369,14 @@ export default function SearchScreen({ navigateToBible }: Props) {
 
       {/* Entry viewer modal */}
       {viewingEntry && (
-        <div className="fixed inset-0 z-50 flex flex-col" style={{ background: 'rgba(0,0,0,0.5)' }}>
+        <div className="fixed inset-0 z-50 flex flex-col modal-backdrop" style={{ background: 'rgba(0,0,0,0.5)' }}>
           <div
-            className="flex flex-col mt-auto rounded-t-2xl overflow-hidden"
+            className="flex flex-col mt-auto rounded-t-2xl overflow-hidden sheet-panel"
             style={{ background: bg, maxHeight: 'calc(var(--app-height, 100dvh) * 0.92)' }}
           >
             <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0"
               style={{ borderColor: border, background: card }}>
-              <button onClick={() => setViewingEntry(null)} className="active:opacity-70">
+              <button onClick={() => setViewingEntry(null)} className="press active:opacity-70">
                 <X size={20} color={sub} />
               </button>
               <span className="font-semibold flex-1 mx-3 truncate" style={{ color: text, fontSize: fs(16) }}>

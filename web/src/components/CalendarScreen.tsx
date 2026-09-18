@@ -211,7 +211,7 @@ export default function CalendarScreen({ navigateToBible }: Props) {
     <div className="flex flex-col h-full" style={{ background: bg }}>
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0" style={{ background: card, borderColor: border }}>
-        <button onClick={prevMonth} className="active:opacity-70 p-1">
+        <button onClick={prevMonth} className="press active:opacity-70 p-1">
           <ChevronLeft size={20} color={primary} />
         </button>
         <div className="flex flex-col items-center">
@@ -222,7 +222,7 @@ export default function CalendarScreen({ navigateToBible }: Props) {
             <span className="text-xs mt-0.5" style={{ color: fastingBorderColor }}>● Пост активен</span>
           )}
         </div>
-        <button onClick={nextMonth} className="active:opacity-70 p-1">
+        <button onClick={nextMonth} className="press active:opacity-70 p-1">
           <ChevronRight size={20} color={primary} />
         </button>
       </div>
@@ -254,7 +254,7 @@ export default function CalendarScreen({ navigateToBible }: Props) {
               <button
                 key={day}
                 onClick={() => setSelectedDate(dateStr)}
-                className="aspect-square flex flex-col items-center justify-center rounded-xl active:opacity-70 relative"
+                className="aspect-square flex flex-col items-center justify-center rounded-xl press active:opacity-70 relative"
                 style={{
                   background: isSelected ? primary : isToday ? primary + '20' : 'transparent',
                   border: hasFasting
@@ -289,7 +289,7 @@ export default function CalendarScreen({ navigateToBible }: Props) {
               {!activeFasting ? (
                 <button
                   onClick={() => setShowFastingModal(true)}
-                  className="text-xs px-2 py-1 rounded-lg active:opacity-70"
+                  className="text-xs px-2 py-1 rounded-lg press active:opacity-70"
                   style={{ border: `1px solid ${fastingBorderColor}`, color: fastingBorderColor }}
                 >
                   + Пост
@@ -297,7 +297,7 @@ export default function CalendarScreen({ navigateToBible }: Props) {
               ) : (
                 <button
                   onClick={endFasting}
-                  className="text-xs px-2 py-1 rounded-lg active:opacity-70"
+                  className="text-xs px-2 py-1 rounded-lg press active:opacity-70"
                   style={{ background: fastingBorderColor + '22', color: fastingBorderColor, border: `1px solid ${fastingBorderColor}` }}
                 >
                   Завершить пост
@@ -305,7 +305,7 @@ export default function CalendarScreen({ navigateToBible }: Props) {
               )}
               <button
                 onClick={() => setShowPlanModal(true)}
-                className="text-xs px-2 py-1 rounded-lg active:opacity-70"
+                className="text-xs px-2 py-1 rounded-lg press active:opacity-70"
                 style={{ border: `1px solid ${primary}`, color: primary }}
               >
                 + План
@@ -321,7 +321,7 @@ export default function CalendarScreen({ navigateToBible }: Props) {
                   <span className="text-xs font-medium" style={{ color: fastingBorderColor }}>
                     🙏 Пост{f.notes ? `: ${f.notes}` : ''} ({f.start_date}{f.end_date ? ` → ${f.end_date}` : ' — продолжается'})
                   </span>
-                  <button onClick={() => f.id && deleteFasting(f.id)} className="active:opacity-70 ml-2">
+                  <button onClick={() => f.id && deleteFasting(f.id)} className="press active:opacity-70 ml-2">
                     <Trash2 size={12} color={sub} />
                   </button>
                 </div>
@@ -343,16 +343,16 @@ export default function CalendarScreen({ navigateToBible }: Props) {
                   placeholder="Напишите заметку..."
                 />
                 <div className="flex gap-3 mt-2">
-                  <button onClick={saveNote} className="text-xs px-3 py-1 rounded-lg active:opacity-70" style={{ background: primary, color: '#fff' }}>
+                  <button onClick={saveNote} className="text-xs px-3 py-1 rounded-lg press active:opacity-70" style={{ background: primary, color: '#fff' }}>
                     Сохранить
                   </button>
-                  <button onClick={() => setNoteEditing(false)} className="text-xs active:opacity-70" style={{ color: sub }}>
+                  <button onClick={() => setNoteEditing(false)} className="text-xs press active:opacity-70" style={{ color: sub }}>
                     Отмена
                   </button>
                 </div>
               </div>
             ) : (
-              <button onClick={() => setNoteEditing(true)} className="w-full text-left active:opacity-70">
+              <button onClick={() => setNoteEditing(true)} className="w-full text-left press active:opacity-70">
                 <p style={{ fontSize: fs(14), color: dailyNote ? text : sub }}>
                   {dailyNote || 'Нажмите, чтобы добавить заметку...'}
                 </p>
@@ -364,7 +364,7 @@ export default function CalendarScreen({ navigateToBible }: Props) {
           <div className="px-4 py-3 border-b" style={{ borderColor: border }}>
             <div className="flex items-center justify-between mb-2">
               <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: sub }}>Чтение</p>
-              <button onClick={() => setShowAddReading(true)} className="active:opacity-70">
+              <button onClick={() => setShowAddReading(true)} className="press active:opacity-70">
                 <Plus size={14} color={primary} />
               </button>
             </div>
@@ -373,7 +373,7 @@ export default function CalendarScreen({ navigateToBible }: Props) {
             ) : (
               dayReadings.map(r => (
                 <div key={r.id} className="flex items-center gap-2 py-1.5">
-                  <button onClick={() => toggleReading(r)} className="active:opacity-70 flex-shrink-0">
+                  <button onClick={() => toggleReading(r)} className="press active:opacity-70 flex-shrink-0">
                     {r.completed ? <CheckCircle size={18} color="#22c55e" /> : <Circle size={18} color={sub} />}
                   </button>
                   <span
@@ -383,7 +383,7 @@ export default function CalendarScreen({ navigateToBible }: Props) {
                   >
                     {r.book} {r.chapter}
                   </span>
-                  <button onClick={() => r.id && deleteReading(r.id)} className="active:opacity-70">
+                  <button onClick={() => r.id && deleteReading(r.id)} className="press active:opacity-70">
                     <Trash2 size={12} color={sub} />
                   </button>
                 </div>
@@ -400,7 +400,7 @@ export default function CalendarScreen({ navigateToBible }: Props) {
               {dayEntries.map(e => (
                 <button
                   key={e.id}
-                  className="w-full text-left py-2 border-b last:border-0 active:opacity-70"
+                  className="w-full text-left py-2 border-b last:border-0 press active:opacity-70"
                   style={{ borderColor: border }}
                   onClick={() => setViewingEntry(e)}
                 >
@@ -419,11 +419,11 @@ export default function CalendarScreen({ navigateToBible }: Props) {
       {/* Add reading modal */}
       {showAddReading && (
         <div className="ios-modal z-50 flex flex-col modal-backdrop" style={{ background: 'rgba(0,0,0,0.5)' }}>
-          <div className="flex flex-col mt-auto rounded-t-2xl overflow-hidden" style={{ background: bg }}>
+          <div className="flex flex-col mt-auto rounded-t-2xl overflow-hidden sheet-panel" style={{ background: bg }}>
             <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: border, background: card }}>
-              <button onClick={() => setShowAddReading(false)} className="active:opacity-70"><X size={20} color={sub} /></button>
+              <button onClick={() => setShowAddReading(false)} className="press active:opacity-70"><X size={20} color={sub} /></button>
               <span className="font-semibold" style={{ color: text, fontSize: fs(16) }}>Добавить чтение</span>
-              <button onClick={addReading} className="active:opacity-70"><Check size={20} color={primary} /></button>
+              <button onClick={addReading} className="press active:opacity-70"><Check size={20} color={primary} /></button>
             </div>
             <div className="p-4 flex flex-col gap-3">
               <div>
@@ -457,11 +457,11 @@ export default function CalendarScreen({ navigateToBible }: Props) {
       {/* Fasting modal */}
       {showFastingModal && (
         <div className="ios-modal z-50 flex flex-col modal-backdrop" style={{ background: 'rgba(0,0,0,0.5)' }}>
-          <div className="flex flex-col mt-auto rounded-t-2xl overflow-hidden" style={{ background: bg }}>
+          <div className="flex flex-col mt-auto rounded-t-2xl overflow-hidden sheet-panel" style={{ background: bg }}>
             <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: border, background: card }}>
-              <button onClick={() => setShowFastingModal(false)} className="active:opacity-70"><X size={20} color={sub} /></button>
+              <button onClick={() => setShowFastingModal(false)} className="press active:opacity-70"><X size={20} color={sub} /></button>
               <span className="font-semibold" style={{ color: text, fontSize: fs(16) }}>Начать пост</span>
-              <button onClick={startFasting} className="active:opacity-70"><Check size={20} color={primary} /></button>
+              <button onClick={startFasting} className="press active:opacity-70"><Check size={20} color={primary} /></button>
             </div>
             <div className="p-4">
               <p className="text-xs font-semibold mb-2" style={{ color: sub }}>Описание (необязательно)</p>
@@ -484,11 +484,11 @@ export default function CalendarScreen({ navigateToBible }: Props) {
       {/* Reading plan generator modal */}
       {showPlanModal && (
         <div className="ios-modal z-50 flex flex-col modal-backdrop" style={{ background: 'rgba(0,0,0,0.5)' }}>
-          <div className="flex flex-col mt-auto rounded-t-2xl overflow-hidden" style={{ background: bg }}>
+          <div className="flex flex-col mt-auto rounded-t-2xl overflow-hidden sheet-panel" style={{ background: bg }}>
             <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: border, background: card }}>
-              <button onClick={() => setShowPlanModal(false)} className="active:opacity-70"><X size={20} color={sub} /></button>
+              <button onClick={() => setShowPlanModal(false)} className="press active:opacity-70"><X size={20} color={sub} /></button>
               <span className="font-semibold" style={{ color: text, fontSize: fs(16) }}>Создать план чтения</span>
-              <button onClick={generateAndSavePlan} disabled={planGenerating} className="active:opacity-70">
+              <button onClick={generateAndSavePlan} disabled={planGenerating} className="press active:opacity-70">
                 <Check size={20} color={primary} />
               </button>
             </div>
@@ -505,7 +505,7 @@ export default function CalendarScreen({ navigateToBible }: Props) {
                     <button
                       key={p.id}
                       onClick={() => setPlanPreset(p.id)}
-                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl active:opacity-70"
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-xl press active:opacity-70"
                       style={{
                         background: planPreset === p.id ? primary + '20' : 'transparent',
                         border: `1px solid ${planPreset === p.id ? primary : border}`,
@@ -540,9 +540,9 @@ export default function CalendarScreen({ navigateToBible }: Props) {
       {/* Entry viewer modal */}
       {viewingEntry && (
         <div className="ios-modal z-50 flex flex-col modal-backdrop" style={{ background: 'rgba(0,0,0,0.5)' }}>
-          <div className="flex flex-col mt-auto rounded-t-2xl overflow-hidden" style={{ background: bg, maxHeight: 'calc(var(--app-height, 100dvh) * 0.85)' }}>
+          <div className="flex flex-col mt-auto rounded-t-2xl overflow-hidden sheet-panel" style={{ background: bg, maxHeight: 'calc(var(--app-height, 100dvh) * 0.85)' }}>
             <div className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0" style={{ borderColor: border, background: card }}>
-              <button onClick={() => setViewingEntry(null)} className="active:opacity-70"><X size={20} color={sub} /></button>
+              <button onClick={() => setViewingEntry(null)} className="press active:opacity-70"><X size={20} color={sub} /></button>
               <span className="font-semibold flex-1 mx-3 truncate" style={{ color: text, fontSize: fs(16) }}>{viewingEntry.title}</span>
             </div>
             <div className="flex-1 scroll-area p-4 allow-select">

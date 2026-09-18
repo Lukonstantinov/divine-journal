@@ -132,6 +132,12 @@ export default function App() {
     metas.forEach(m => m.setAttribute('content', theme.bg))
   }, [theme.bg])
 
+  // Expose the active theme on <html> so CSS (shadows, sheet elevation)
+  // can adapt without threading theme through every stylesheet rule
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', themeId)
+  }, [themeId])
+
   if (!ready) {
     return (
       <div className="flex items-center justify-center" style={{ background: THEMES.light.bg, height: 'var(--app-height, 100dvh)' }}>

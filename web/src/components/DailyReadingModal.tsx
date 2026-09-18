@@ -88,7 +88,7 @@ export default function DailyReadingModal({ onClose, onSaveToJournal, onMarkRead
   if (!reading) {
     return (
       <div className="ios-modal z-50 flex flex-col modal-backdrop" style={{ background: 'rgba(0,0,0,0.5)' }}>
-        <div className="flex flex-col mt-auto rounded-t-2xl items-center justify-center py-10" style={{ background: bg }}>
+        <div className="flex flex-col mt-auto rounded-t-2xl sheet-panel items-center justify-center py-10" style={{ background: bg }}>
           <BookOpen size={32} color={sub} />
           <p className="mt-3" style={{ color: sub }}>Загрузка...</p>
         </div>
@@ -101,7 +101,7 @@ export default function DailyReadingModal({ onClose, onSaveToJournal, onMarkRead
   return (
     <div className="ios-modal z-50 flex flex-col modal-backdrop" style={{ background: 'rgba(0,0,0,0.5)' }}>
       <div
-        className="flex flex-col mt-auto rounded-t-2xl overflow-hidden"
+        className="flex flex-col mt-auto rounded-t-2xl overflow-hidden sheet-panel"
         style={{ background: bg, maxHeight: 'calc(var(--app-height, 100dvh) * 0.94)' }}
       >
         {/* Header */}
@@ -109,7 +109,7 @@ export default function DailyReadingModal({ onClose, onSaveToJournal, onMarkRead
           className="flex items-center justify-between px-4 py-3 border-b flex-shrink-0"
           style={{ borderColor: border, background: card }}
         >
-          <button onClick={onClose} className="active:opacity-70"><X size={20} color={sub} /></button>
+          <button onClick={onClose} className="press active:opacity-70"><X size={20} color={sub} /></button>
           <span className="font-semibold" style={{ color: text, fontSize: fs(16) }}>Ежедневное чтение</span>
           <div style={{ width: 20 }} />
         </div>
@@ -136,7 +136,7 @@ export default function DailyReadingModal({ onClose, onSaveToJournal, onMarkRead
                 <div className="flex gap-2">
                   <button
                     onClick={() => handleShare(reading.verseOfDay.reference, reading.verseOfDay.text)}
-                    className="active:opacity-70 p-1"
+                    className="press active:opacity-70 p-1"
                   >
                     <Share2 size={14} color={sub} />
                   </button>
@@ -145,7 +145,7 @@ export default function DailyReadingModal({ onClose, onSaveToJournal, onMarkRead
                       book: reading.verseOfDay.book, chapter: reading.verseOfDay.chapter,
                       verse: reading.verseOfDay.verse, text: reading.verseOfDay.text,
                     })}
-                    className="text-xs px-2 py-0.5 rounded-lg active:opacity-70"
+                    className="text-xs px-2 py-0.5 rounded-lg press active:opacity-70"
                     style={{ background: primary + '22', color: primary, border: `1px solid ${primary}33` }}
                   >
                     + В журнал
@@ -171,7 +171,7 @@ export default function DailyReadingModal({ onClose, onSaveToJournal, onMarkRead
                       <p className="text-xs" style={{ color: sub }}>{v.reference}</p>
                       <button
                         onClick={() => handleSave(v.reference, { book: v.book, chapter: v.chapter, verse: v.verse, text: v.text })}
-                        className="text-xs px-2 py-0.5 rounded-lg active:opacity-70"
+                        className="text-xs px-2 py-0.5 rounded-lg press active:opacity-70"
                         style={{ background: primary + '22', color: primary }}
                       >
                         + В журнал
@@ -194,7 +194,7 @@ export default function DailyReadingModal({ onClose, onSaveToJournal, onMarkRead
               reading.psalms.map(psalm => (
                 <div key={psalm.chapter} className="mb-2 rounded-xl overflow-hidden" style={{ border: `1px solid ${border}` }}>
                   <button
-                    className="w-full flex items-center justify-between px-4 py-2.5 active:opacity-70"
+                    className="w-full flex items-center justify-between px-4 py-2.5 press active:opacity-70"
                     style={{ background: card }}
                     onClick={() => setPsalmExpanded(prev => ({ ...prev, [psalm.chapter]: !prev[psalm.chapter] }))}
                   >
@@ -219,7 +219,7 @@ export default function DailyReadingModal({ onClose, onSaveToJournal, onMarkRead
                             book: 'Псалтирь', chapter: psalm.chapter, verse: 1, text: full,
                           })
                         }}
-                        className="mt-2 text-xs px-3 py-1 rounded-lg active:opacity-70"
+                        className="mt-2 text-xs px-3 py-1 rounded-lg press active:opacity-70"
                         style={{ background: primary + '22', color: primary, border: `1px solid ${primary}33` }}
                       >
                         + В журнал
@@ -260,7 +260,7 @@ export default function DailyReadingModal({ onClose, onSaveToJournal, onMarkRead
                       <p className="text-xs" style={{ color: sub }}>{p.reference}</p>
                       <button
                         onClick={() => handleSave(p.reference, { book: 'Притчи', chapter: p.chapter, verse: p.verse, text: p.text })}
-                        className="text-xs px-2 py-0.5 rounded-lg active:opacity-70"
+                        className="text-xs px-2 py-0.5 rounded-lg press active:opacity-70"
                         style={{ background: primary + '22', color: primary }}
                       >
                         + В журнал
@@ -280,7 +280,7 @@ export default function DailyReadingModal({ onClose, onSaveToJournal, onMarkRead
           <button
             onClick={markAsRead}
             disabled={isRead}
-            className="w-full py-3 rounded-xl font-semibold active:opacity-70"
+            className="w-full py-3 rounded-xl font-semibold press active:opacity-70"
             style={{
               background: isRead ? '#A5D6A7' : '#2E7D32',
               color: '#fff',
