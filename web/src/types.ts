@@ -1,3 +1,5 @@
+import React from 'react'
+
 export type Tab = 'journal' | 'bible' | 'calendar' | 'search' | 'settings'
 
 export type ThemeId = 'light' | 'dark' | 'sepia'
@@ -345,4 +347,57 @@ export function applyRanges(content: string, ranges: StyleRange[] = []): Array<{
     i = j
   }
   return spans
+}
+
+// ─── Search helpers ─────────────────────────────
+// Normalize Russian text for search matching: lowercase + fold ё→е so
+// "ещё" and "еще" are treated as the same word.
+export function normalizeSearch(str: string): string {
+  return str.toLowerCase().replace(/ё/g, 'е')
+}
+
+// Find all non-overlapping occurrences of `query` inside `text` (after
+// normalization) and return their [start, end) ranges in the ORIGINAL text.
+export function findAllMatches(text: string, query: string, wholeWord = false): Array<[number, number]> {
+  const q = normalizeSearch(query.trim())
+  if (!q) return []
+  const t = normalizeSearch(text)
+  const ranges: Array<[number, number]> = []
+  let from = 0
+  while (from <= t.length) {
+    const idx = t.indexOf(q, from)
+    if (idx === -1) break
+    if (wholeWord) {
+      const before = idx === 0 ? '' : t[idx - 1]
+      const after = idx + q.length >= t.length ? '' : t[idx + q.length]
+      const isWordChar = (c: string) => /[a-zа-я0-9]/i.test(c)
+      if ((before && isWordChar(before)) || (after && isWordChar(after))) {
+        from = idx + 1
+        continue
+      }
+    }
+    ranges.push([idx, idx + q.length])
+    from = idx + q.length
+  }
+  return ranges
+}
+
+// Render `text` as React nodes with every match of `query` wrapped in <mark>.
+export function highlightAllMatches(
+  text: string,
+  query: string,
+  markStyle: React.CSSProperties = { background: '#ffeb3b', color: '#000', borderRadius: 2, padding: '0 1px' },
+  wholeWord = false
+): React.ReactNode {
+  const ranges = findAllMatches(text, query, wholeWord)
+  if (ranges.length === 0) return text
+  const parts: React.ReactNode[] = []
+  let last = 0
+  ranges.forEach(([start, end], i) => {
+    if (start > last) parts.push(React.createElement(React.Fragment, { key: `t${i}` }, text.slice(last, start)))
+    parts.push(React.createElement('mark', { key: `m${i}`, style: markStyle }, text.slice(start, end)))
+    last = end
+  })
+  if (last < text.length) parts.push(React.createElement(React.Fragment, { key: 'tail' }, text.slice(last)))
+  return React.createElement(React.Fragment, null, ...parts)
 }

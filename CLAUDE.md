@@ -241,7 +241,7 @@ achievements     (id TEXT PK, unlocked_at TEXT, title TEXT, description TEXT)
 - Graph: Force-directed layout (60 iterations) in `computeGraph()`, rendered with react-native-svg
 
 ### Version Management
-- **Current version: v5.8**
+- **Current version: v5.8 (native/Expo)**, **v5.10 (web)** — the two apps have drifted; see "Enhancement Plan" below for what's web-only vs native-only.
 - **On every code change built into an APK, bump the version (patch: 5.4 → 5.5 etc.)**
 - Update in **3 places**:
   1. `App.tsx` line ~195: `version: '5.X'` inside `collectBackupData()`
@@ -310,6 +310,7 @@ See `ENHANCEMENT_PLAN.md` for the full roadmap with code-level implementation de
 - **v5.5**: Note color gradient backgrounds (replace dot with transparent card wash), fasting dashed borders, uniform category badges, multi-select batch folder move, note color opacity + fasting border color settings
 - **v5.6**: Bottom sheet SafeArea fix, Bible prev/next chapter navigation, verse capitalization + no numbers in multi-verse notes, expanded font picker (7 fonts) applied to notes, reading plan progress card on Journal page
 - **v5.7**: Compact top section in JournalScreen (reading card, plan card, verse band), remove editor preview block, search result word highlighting + scroll-to-verse in BibleScreen, verse capitalization in DailyReadingModal and daily verse widget, 3 additional Bible fonts (Palatino, Baskerville, Medium — 10 total)
+- **v5.10 (web only)**: Fixed Bible search — `SearchScreen` now passes `highlightTerm` through `navigateToBible`, so a tapped search result actually highlights the matched word in `BibleScreen` (was silently dropped before). Highlighting is now multi-occurrence (every match in a verse, not just the first) via shared `highlightAllMatches`/`findAllMatches` helpers in `web/src/types.ts`. Removed the hard 100-result cap on Bible search — it now scans and counts every match, showing 50 at a time with a "Показать ещё" button. Added a Ветхий/Новый Завет testament filter and a "Целое слово" (whole word) toggle to Bible search. Added ё→е normalization (`normalizeSearch`) so "ещё"/"еще" spellings both match. Native app (`App.tsx`) already had per-occurrence highlighting for its own search flow — this brings the web app to parity and fixes the additional bugs (result cap, no testament filter) that existed in neither.
 
 ### Planned
 - **Feature 2**: "On This Day" — past years memories slider

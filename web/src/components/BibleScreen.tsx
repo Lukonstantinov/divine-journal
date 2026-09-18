@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useTheme, NavTarget } from '../App'
 import { BIBLE_BOOKS, BIBLE_VERSES } from '../data/BibleVerses'
 import { db, Entry } from '../db'
-import { parseBlocks } from '../types'
+import { highlightAllMatches, normalizeSearch, parseBlocks } from '../types'
 import { ChevronLeft, ChevronRight, Bookmark, BookmarkCheck, X } from 'lucide-react'
 
 interface Props {
@@ -156,18 +156,7 @@ export default function BibleScreen({ navTarget, clearNavTarget }: Props) {
 
   const highlightVerseText = (text: string): React.ReactNode => {
     if (!highlightTerm) return text
-    const q = highlightTerm.toLowerCase()
-    const idx = text.toLowerCase().indexOf(q)
-    if (idx === -1) return text
-    return (
-      <>
-        {text.slice(0, idx)}
-        <mark style={{ background: '#ffeb3b', color: '#000', borderRadius: 2, padding: '0 1px' }}>
-          {text.slice(idx, idx + q.length)}
-        </mark>
-        {text.slice(idx + q.length)}
-      </>
-    )
+    return highlightAllMatches(text, highlightTerm)
   }
 
   const bibleFontFamily = BIBLE_FONT_MAP[bibleFont] ?? 'Georgia, serif'
@@ -291,7 +280,7 @@ export default function BibleScreen({ navTarget, clearNavTarget }: Props) {
               const bookmarked = bookmarks.has(verseId)
               const usageKey = `${v.book}.${v.chapter}.${v.verse}`
               const usageCount = showVerseUsage ? (verseUsageMap[usageKey]?.length ?? 0) : 0
-              const isHighlighted = highlightTerm && v.text.toLowerCase().includes(highlightTerm.toLowerCase())
+              const isHighlighted = highlightTerm && normalizeSearch(v.text).includes(normalizeSearch(highlightTerm))
               return (
                 <div
                   key={v.verse}

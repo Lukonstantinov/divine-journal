@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useTheme, NavTarget } from '../App'
 import { BIBLE_VERSES } from '../data/BibleVerses'
 import { db, Entry } from '../db'
-import { Block, CATEGORIES, catColor, catLabel, fmtDateRu, parseBlocks } from '../types'
+import { Block, CATEGORIES, catColor, catLabel, fmtDateRu, findAllMatches, highlightAllMatches, normalizeSearch, parseBlocks } from '../types'
 import { Search, X, BookOpen, Notebook } from 'lucide-react'
 
 interface Props {
@@ -15,7 +15,10 @@ interface BibleResult {
   chapter: number
   verse: number
   text: string
+  testament: 'old' | 'new'
 }
+
+const PAGE_SIZE = 50
 
 export default function SearchScreen({ navigateToBible }: Props) {
   const { theme, fontScale } = useTheme()
@@ -26,6 +29,9 @@ export default function SearchScreen({ navigateToBible }: Props) {
   // ─── Bible search ───────────────────────────────
   const [bibleQuery, setBibleQuery] = useState('')
   const [bibleResults, setBibleResults] = useState<BibleResult[]>([])
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE)
+  const [testamentFilter, setTestamentFilter] = useState<'all' | 'old' | 'new'>('all')
+  const [wholeWord, setWholeWord] = useState(false)
   const [searching, setSearching] = useState(false)
   const bibleDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const bibleInputRef = useRef<HTMLInputElement>(null)
@@ -49,29 +55,36 @@ export default function SearchScreen({ navigateToBible }: Props) {
     db.entries.orderBy('created_at').reverse().toArray().then(setAllEntries)
   }, [])
 
-  // Bible search
-  const doBibleSearch = useCallback((q: string) => {
-    const trimmed = q.trim().toLowerCase()
+  // Bible search — scans every verse (no artificial result cap), matches
+  // whole text, filters by testament, and normalizes ё/е so both spellings
+  // match. Results are paginated for display via `visibleCount`.
+  const doBibleSearch = useCallback((q: string, testament: 'all' | 'old' | 'new', ww: boolean) => {
+    const trimmed = q.trim()
     if (trimmed.length < 2) { setBibleResults([]); setSearching(false); return }
     setSearching(true)
     setTimeout(() => {
+      const nq = normalizeSearch(trimmed)
       const matches: BibleResult[] = []
-      for (let i = 0; i < BIBLE_VERSES.length && matches.length < 100; i++) {
+      for (let i = 0; i < BIBLE_VERSES.length; i++) {
         const v = BIBLE_VERSES[i]
-        if (v.text.toLowerCase().includes(trimmed) || v.id.toLowerCase().includes(trimmed)) {
-          matches.push({ id: v.id, book: v.book, chapter: v.chapter, verse: v.verse, text: v.text })
+        if (testament !== 'all' && v.testament !== testament) continue
+        const normalizedText = normalizeSearch(v.text)
+        const found = ww ? findAllMatches(v.text, trimmed, true).length > 0 : normalizedText.includes(nq)
+        if (found) {
+          matches.push({ id: v.id, book: v.book, chapter: v.chapter, verse: v.verse, text: v.text, testament: v.testament })
         }
       }
       setBibleResults(matches)
+      setVisibleCount(PAGE_SIZE)
       setSearching(false)
     }, 0)
   }, [])
 
   useEffect(() => {
     if (bibleDebounceRef.current) clearTimeout(bibleDebounceRef.current)
-    bibleDebounceRef.current = setTimeout(() => doBibleSearch(bibleQuery), 300)
+    bibleDebounceRef.current = setTimeout(() => doBibleSearch(bibleQuery, testamentFilter, wholeWord), 300)
     return () => { if (bibleDebounceRef.current) clearTimeout(bibleDebounceRef.current) }
-  }, [bibleQuery, doBibleSearch])
+  }, [bibleQuery, testamentFilter, wholeWord, doBibleSearch])
 
   // Journal search (debounced, filtered via useMemo-equivalent)
   const applyJournalFilters = useCallback((entries: Entry[], q: string, cats: string[], from: string, to: string) => {
@@ -105,21 +118,8 @@ export default function SearchScreen({ navigateToBible }: Props) {
     if (activeTab === 'bible') setTimeout(() => bibleInputRef.current?.focus(), 100)
   }, [activeTab])
 
-  const highlightText = (str: string, query: string): React.ReactNode => {
-    if (!query.trim()) return str
-    const q = query.trim().toLowerCase()
-    const idx = str.toLowerCase().indexOf(q)
-    if (idx === -1) return str
-    return (
-      <>
-        {str.slice(0, idx)}
-        <mark style={{ background: '#ffeb3b', color: '#000', borderRadius: 2, padding: '0 1px' }}>
-          {str.slice(idx, idx + q.length)}
-        </mark>
-        {str.slice(idx + q.length)}
-      </>
-    )
-  }
+  const highlightText = (str: string, query: string, ww = false): React.ReactNode =>
+    highlightAllMatches(str, query, undefined, ww)
 
   const journalHasQuery = journalQuery.trim().length >= 2 || filterCats.length > 0 || filterDateFrom || filterDateTo
 
@@ -166,9 +166,39 @@ export default function SearchScreen({ navigateToBible }: Props) {
                 </button>
               )}
             </div>
+
+            {/* Testament + whole-word filters */}
+            <div className="flex items-center gap-1.5 mt-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+              {(['all', 'old', 'new'] as const).map(t => (
+                <button
+                  key={t}
+                  onClick={() => setTestamentFilter(t)}
+                  className="flex-shrink-0 px-2.5 py-1 rounded-full text-xs font-medium active:opacity-70"
+                  style={{
+                    background: testamentFilter === t ? primary : 'transparent',
+                    color: testamentFilter === t ? '#fff' : sub,
+                    border: `1px solid ${testamentFilter === t ? primary : border}`,
+                  }}
+                >
+                  {t === 'all' ? 'Всё' : t === 'old' ? 'Ветхий Завет' : 'Новый Завет'}
+                </button>
+              ))}
+              <button
+                onClick={() => setWholeWord(w => !w)}
+                className="flex-shrink-0 px-2.5 py-1 rounded-full text-xs font-medium active:opacity-70"
+                style={{
+                  background: wholeWord ? primary : 'transparent',
+                  color: wholeWord ? '#fff' : sub,
+                  border: `1px solid ${wholeWord ? primary : border}`,
+                }}
+              >
+                Целое слово
+              </button>
+            </div>
+
             {bibleResults.length > 0 && (
               <p className="text-xs mt-2 px-1" style={{ color: sub }}>
-                {bibleResults.length === 100 ? 'Первые 100 результатов' : `${bibleResults.length} результатов`}
+                Найдено: {bibleResults.length}{bibleResults.length > visibleCount ? ` (показано ${visibleCount})` : ''}
               </p>
             )}
           </div>
@@ -191,12 +221,12 @@ export default function SearchScreen({ navigateToBible }: Props) {
                 <p style={{ color: sub, fontSize: fs(14) }}>Ничего не найдено</p>
               </div>
             )}
-            {bibleResults.map((r: BibleResult) => (
+            {bibleResults.slice(0, visibleCount).map((r: BibleResult) => (
               <button
                 key={r.id}
                 className="w-full text-left px-4 py-3 border-b active:opacity-70"
                 style={{ borderColor: border }}
-                onClick={() => navigateToBible({ book: r.book, chapter: r.chapter, verse: r.verse })}
+                onClick={() => navigateToBible({ book: r.book, chapter: r.chapter, verse: r.verse, highlightTerm: bibleQuery.trim() })}
               >
                 <div className="flex items-baseline gap-2 mb-1">
                   <span className="text-xs font-semibold" style={{ color: primary }}>
@@ -204,10 +234,19 @@ export default function SearchScreen({ navigateToBible }: Props) {
                   </span>
                 </div>
                 <p className="leading-snug allow-select" style={{ fontSize: fs(14), color: text }}>
-                  {highlightText(r.text, bibleQuery)}
+                  {highlightText(r.text, bibleQuery, wholeWord)}
                 </p>
               </button>
             ))}
+            {bibleResults.length > visibleCount && (
+              <button
+                onClick={() => setVisibleCount(c => c + PAGE_SIZE)}
+                className="w-full text-center py-3 active:opacity-70"
+                style={{ color: primary, fontSize: fs(13), fontWeight: 600 }}
+              >
+                Показать ещё ({Math.min(PAGE_SIZE, bibleResults.length - visibleCount)})
+              </button>
+            )}
             {bibleResults.length > 0 && <div className="h-4" />}
           </div>
         </>
